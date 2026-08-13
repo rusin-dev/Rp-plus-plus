@@ -660,7 +660,7 @@ def _schema_name(schema: ChatCompletionToolUnionParam) -> str | None:
 def _resolve_workspace_path(path: str) -> Path:
     """解析路径并确保其位于工作区（ROOT_DIR）内。"""
     root = Config.ROOT_DIR.resolve()
-    candidate = Path(path).expanduser()
+    candidate = Path(path.replace("\\", "/")).expanduser()
     if not candidate.is_absolute():
         candidate = root / candidate
     candidate = candidate.resolve()
