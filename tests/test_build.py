@@ -39,7 +39,8 @@ def test_build_args_for_nuitka():
     assert any(a == "--output-filename=rp" for a in args)
     data_spec = next(a for a in args if a.startswith("--include-data-dir="))
     assert "src/data" in data_spec
-    assert Path(args[args.index("--output-dir") + 1]).name == "dist"
+    output_dir = next(a for a in args if a.startswith("--output-dir="))
+    assert Path(output_dir.removeprefix("--output-dir=")).name == "dist"
     assert args[-1].endswith("launcher.py")
 
 

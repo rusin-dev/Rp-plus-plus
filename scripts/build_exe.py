@@ -30,8 +30,7 @@ def build_args() -> list[str]:
         "--assume-yes-for-downloads",
         "--output-filename=rp",
         f"--include-data-dir={data_dir}=src/data",
-        "--output-dir",
-        str(ROOT / "dist"),
+        f"--output-dir={ROOT / 'dist'}",
         str(LAUNCHER),
     ]
 
