@@ -73,9 +73,7 @@ class ChatApp:
         self._client = client
         self._system_prompt = system_prompt
         self._single_shot = initial_message is not None
-        self._console = Console(
-            color_system=_resolve_color_system(config.RICH_COLOR_SYSTEM)
-        )
+        self._console = Console(color_system=_resolve_color_system(config.RICH_COLOR_SYSTEM))
 
         self._messages: list[dict] = []
         self._current = ""
@@ -133,9 +131,7 @@ class ChatApp:
 
     def _flush_current(self) -> None:
         if self._current:
-            self._messages.append(
-                {"role": "assistant", "content": self._current}
-            )
+            self._messages.append({"role": "assistant", "content": self._current})
             self._current = ""
 
     # ---------- 流式回复展示（Markdown 实时渲染） ----------
@@ -156,9 +152,7 @@ class ChatApp:
             except Exception:
                 self._live = None
                 self._markdown_unavailable = True
-                logger.debug(
-                    "无法启动 Markdown 实时渲染，回退到普通流式输出", exc_info=True
-                )
+                logger.debug("无法启动 Markdown 实时渲染，回退到普通流式输出", exc_info=True)
         self._console.print(">>> ", style=_REPLY_STYLE, end="")
 
     def _extend_live_reply(self) -> None:
@@ -223,14 +217,10 @@ class ChatApp:
             self._flush_current()
             name = event.data["name"]
             args = event.data.get("arguments", "")
-            self._messages.append(
-                {"role": "tool", "content": f"调用工具 {name}({args})"}
-            )
+            self._messages.append({"role": "tool", "content": f"调用工具 {name}({args})"})
             self._console.print(f"⎿ {name}({args})", style=_TOOL_STYLE)
         elif event_type == EventTypes.TOOL_RESULT:
-            summary = " ".join(str(event.data).split())[
-                :_TOOL_RESULT_SUMMARY_LEN
-            ]
+            summary = " ".join(str(event.data).split())[:_TOOL_RESULT_SUMMARY_LEN]
             suffix = "…" if len(summary) >= _TOOL_RESULT_SUMMARY_LEN else ""
             self._console.print(f"  → {summary}{suffix}", style=_DIM_STYLE)
         elif event_type == EventTypes.ASSISTANT_DONE:
@@ -383,9 +373,7 @@ class ChatApp:
         elif name == "init":
             self._init_command(force=arg == "-f")
         else:
-            self._console.print(
-                f"未知命令 /{name}，输入 /help 查看可用命令", style=_TOOL_STYLE
-            )
+            self._console.print(f"未知命令 /{name}，输入 /help 查看可用命令", style=_TOOL_STYLE)
 
     def _show_help(self) -> None:
         lines = [f"  /{name}  -  {desc}" for name, desc in COMMAND_DESCRIPTIONS.items()]
@@ -426,9 +414,7 @@ class ChatApp:
     def _models_command(self, model: str | None) -> None:
         provider = self._config.active_provider()
         if provider is None:
-            self._console.print(
-                "未配置 API provider，请先 /connect", style=_ERROR_STYLE
-            )
+            self._console.print("未配置 API provider，请先 /connect", style=_ERROR_STYLE)
             return
         if model:
             try:
@@ -472,9 +458,7 @@ class ChatApp:
         for name, desc in self._config.variant_descriptions().items():
             marker = "▸" if name == self._config.ACTIVE_VARIANT else " "
             lines.append(f"  {marker} {name}  -  {desc}")
-        self._console.print(
-            Panel("\n".join(lines), title="思考强度", border_style=_TOOL_STYLE)
-        )
+        self._console.print(Panel("\n".join(lines), title="思考强度", border_style=_TOOL_STYLE))
         self._console.print("输入 /variants <名称> 切换", style=_DIM_STYLE)
 
     # ---------- 工作模式 ----------
@@ -496,9 +480,7 @@ class ChatApp:
         for name, desc in self._config.mode_descriptions().items():
             marker = "▸" if name == self._config.ACTIVE_MODE else " "
             lines.append(f"  {marker} {name}  -  {desc}")
-        self._console.print(
-            Panel("\n".join(lines), title="工作模式", border_style=_TOOL_STYLE)
-        )
+        self._console.print(Panel("\n".join(lines), title="工作模式", border_style=_TOOL_STYLE))
         self._console.print("输入 /mode <名称> 切换", style=_DIM_STYLE)
 
     # ---------- 上下文压缩 ----------
@@ -511,9 +493,7 @@ class ChatApp:
             if message["role"] in {"user", "assistant"}
         ]
         if len(content) <= keep:
-            self._console.print(
-                f"当前共 {len(content)} 条对话消息，无需压缩", style=_DIM_STYLE
-            )
+            self._console.print(f"当前共 {len(content)} 条对话消息，无需压缩", style=_DIM_STYLE)
             return
         keep_start = content[-keep][0]
         dropped = [message for index, message in content if index < keep_start]
@@ -521,9 +501,7 @@ class ChatApp:
             f"（上下文已压缩）早期 {len(dropped)} 条消息已移除，"
             f"请基于下方最近的 {keep} 条消息继续对话。"
         )
-        self._messages = [
-            {"role": "user", "content": marker}
-        ] + self._messages[keep_start:]
+        self._messages = [{"role": "user", "content": marker}] + self._messages[keep_start:]
         self._save_session()
         self._console.print(
             f"已压缩上下文：移除 {len(dropped)} 条早期消息，保留最近 {keep} 条",
@@ -538,9 +516,7 @@ class ChatApp:
         provider_name = provider.name if provider else "?"
         window = self._config.context_window(model)
         if self._client is None:
-            self._console.print(
-                "未连接客户端，无法获取用量", style=_DIM_STYLE
-            )
+            self._console.print("未连接客户端，无法获取用量", style=_DIM_STYLE)
             return
         usage = self._client.usage_summary()
         input_tokens = usage["input_tokens"]
@@ -558,9 +534,7 @@ class ChatApp:
             f"    - 输出 tokens: {output_tokens:,}",
             f"    - 合计: {total:,}  ·  {usage['calls']} 次请求",
         ]
-        self._console.print(
-            Panel("\n".join(lines), title="用量统计", border_style=_TOOL_STYLE)
-        )
+        self._console.print(Panel("\n".join(lines), title="用量统计", border_style=_TOOL_STYLE))
 
     # ---------- 初始化 AGENTS.md ----------
 
@@ -586,9 +560,7 @@ class ChatApp:
     def _list_sessions(self) -> None:
         sessions = self._session_store.list()
         if not sessions:
-            self._console.print(
-                "暂无已保存的会话", style=_DIM_STYLE
-            )
+            self._console.print("暂无已保存的会话", style=_DIM_STYLE)
             return
         lines = []
         for session in sessions:
@@ -596,9 +568,7 @@ class ChatApp:
                 f"  {session.session_id}  ·  {session.updated_at}"
                 f"  ·  {session.message_count} 条  ·  {session.summary}"
             )
-        self._console.print(
-            Panel("\n".join(lines), title="已保存的会话", border_style=_TOOL_STYLE)
-        )
+        self._console.print(Panel("\n".join(lines), title="已保存的会话", border_style=_TOOL_STYLE))
         self._console.print("输入 /session <id> 恢复指定会话", style=_DIM_STYLE)
 
     def _resume_session(self, session_id: str) -> None:
@@ -705,18 +675,14 @@ class ChatApp:
             return
         self._subagent_mode = "idle"
         self._console.print()
-        self._console.print(
-            f"✖ 子 Agent 失败: {data.get('error', '')}", style=_ERROR_STYLE
-        )
+        self._console.print(f"✖ 子 Agent 失败: {data.get('error', '')}", style=_ERROR_STYLE)
 
     def _flush_subagent_buffer(self) -> None:
         if self._subagent_agent and self._subagent_buffer:
             self._messages.append(
                 {
                     "role": "tool",
-                    "content": (
-                        f"子 Agent {self._subagent_agent} 输出: {self._subagent_buffer}"
-                    ),
+                    "content": (f"子 Agent {self._subagent_agent} 输出: {self._subagent_buffer}"),
                 }
             )
         self._subagent_agent = None
@@ -747,9 +713,7 @@ class ChatApp:
         self._messages.append({"role": "user", "content": user_message})
         self._error = None
         self._busy = True
-        self._client.submit(
-            user_message, self._system_prompt, self._history_params()
-        )
+        self._client.submit(user_message, self._system_prompt, self._history_params())
 
     def _history_params(self) -> list[ChatCompletionMessageParam]:
         history: list[ChatCompletionMessageParam] = []
@@ -757,14 +721,10 @@ class ChatApp:
             role = message["role"]
             content = message["content"]
             if role == "user":
-                history.append(
-                    ChatCompletionUserMessageParam(role="user", content=content)
-                )
+                history.append(ChatCompletionUserMessageParam(role="user", content=content))
             elif role == "assistant":
                 history.append(
-                    ChatCompletionAssistantMessageParam(
-                        role="assistant", content=content
-                    )
+                    ChatCompletionAssistantMessageParam(role="assistant", content=content)
                 )
         return history
 

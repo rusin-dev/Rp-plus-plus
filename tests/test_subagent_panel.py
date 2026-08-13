@@ -27,9 +27,7 @@ def test_panel_accumulates_and_done():
             {"agent_id": "librarian", "name": "grep", "arguments": "{}"},
         )
     )
-    panel.handle_event(
-        Event(EventTypes.SUBAGENT_DONE, {"agent_id": "librarian", "result": "结果"})
-    )
+    panel.handle_event(Event(EventTypes.SUBAGENT_DONE, {"agent_id": "librarian", "result": "结果"}))
     assert panel.is_done() is True
     assert panel.result() == "结果"
     assert "第一行" in "\n".join(panel._lines)
@@ -37,18 +35,14 @@ def test_panel_accumulates_and_done():
 
 def test_panel_error_sets_result():
     panel = _panel()
-    panel.handle_event(
-        Event(EventTypes.SUBAGENT_ERROR, {"agent_id": "librarian", "error": "boom"})
-    )
+    panel.handle_event(Event(EventTypes.SUBAGENT_ERROR, {"agent_id": "librarian", "error": "boom"}))
     assert panel.is_done() is True
     assert panel.result() == "error: boom"
 
 
 def test_panel_collapse_toggles():
     panel = _panel()
-    panel.handle_event(
-        Event(EventTypes.SUBAGENT_TOKEN, {"agent_id": "librarian", "text": "line1"})
-    )
+    panel.handle_event(Event(EventTypes.SUBAGENT_TOKEN, {"agent_id": "librarian", "text": "line1"}))
     joined = "".join(frag[1] for frag in panel._fragments())
     assert "line1" in joined
     panel.toggle_collapse()

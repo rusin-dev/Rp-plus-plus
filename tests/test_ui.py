@@ -230,9 +230,7 @@ def test_command_connect_switches_provider(monkeypatch, tmp_path):
     _set_provider_env(
         monkeypatch, "deepseek", "k1", "https://api.deepseek.com", "chat,reasoner", "chat"
     )
-    _set_provider_env(
-        monkeypatch, "openai", "k2", "https://api.openai.com/v1", "gpt-4o", "gpt-4o"
-    )
+    _set_provider_env(monkeypatch, "openai", "k2", "https://api.openai.com/v1", "gpt-4o", "gpt-4o")
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
@@ -267,9 +265,7 @@ def test_command_models_switches_model(monkeypatch, tmp_path):
 def test_command_compact_truncates(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
-    app._messages = [
-        {"role": "user", "content": f"msg{i}"} for i in range(30)
-    ]
+    app._messages = [{"role": "user", "content": f"msg{i}"} for i in range(30)]
     app._run_command("/compact")
     assert len(app._messages) == 21
     assert app._messages[0]["content"].startswith("（上下文已压缩）")
@@ -279,9 +275,7 @@ def test_command_compact_truncates(monkeypatch, tmp_path):
 def test_command_compact_keeps_custom_count(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
-    app._messages = [
-        {"role": "user", "content": f"msg{i}"} for i in range(30)
-    ]
+    app._messages = [{"role": "user", "content": f"msg{i}"} for i in range(30)]
     app._run_command("/compact 5")
     assert len(app._messages) == 6
     assert app._messages[1]["content"] == "msg25"
@@ -525,9 +519,7 @@ def test_read_input_calls_prompt_session(monkeypatch):
 
     class _FakePromptSession:
         def __new__(cls, *args, **kwargs):
-            return _PromptSession(
-                input=DummyInput(), output=DummyOutput(), **kwargs
-            )
+            return _PromptSession(input=DummyInput(), output=DummyOutput(), **kwargs)
 
         def __class_getitem__(cls, item):
             return cls
@@ -592,12 +584,8 @@ def test_subagent_scroll_accumulates_and_flushes(monkeypatch):
     app, bus = _make_app(monkeypatch)
     app._subagent_mode = "scroll"
     app._subagent_agent = "librarian"
-    app._handle(
-        Event(EventTypes.SUBAGENT_TOKEN, {"agent_id": "librarian", "text": "内容"})
-    )
-    app._handle(
-        Event(EventTypes.SUBAGENT_DONE, {"agent_id": "librarian", "result": "结果"})
-    )
+    app._handle(Event(EventTypes.SUBAGENT_TOKEN, {"agent_id": "librarian", "text": "内容"}))
+    app._handle(Event(EventTypes.SUBAGENT_DONE, {"agent_id": "librarian", "result": "结果"}))
     assert app._subagent_mode == "idle"
     assert app._subagent_agent is None
     assert app._subagent_buffer == ""

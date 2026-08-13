@@ -1,0 +1,46 @@
+name: Snapshot
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Test
+        run: pytest
+
+  snapshot:
+    name: Create snapshot release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create pre-release snapshot-YYMMDD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="snapshot-$(date +%Y%m%d)"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag
+          fi
+          gh release create "$tag" \
+            --repo "${{ github.repository }}" \
+            --title "$tag" \
+            --notes "每周自动快照（pre-release），来源 master，源码包由 GitHub 自动生成。" \
+            --prerelease \
+            --target master

@@ -23,9 +23,7 @@ class SubAgentPanel:
     面板运行期间会消费总线上的 SUBAGENT_* 事件，直到子 Agent 完成或出错。
     """
 
-    def __init__(
-        self, config: type[Config], bus: EventBus, agent_id: str, task: str
-    ) -> None:
+    def __init__(self, config: type[Config], bus: EventBus, agent_id: str, task: str) -> None:
         self._bus = bus
         self._agent_id = agent_id
         self._task = task

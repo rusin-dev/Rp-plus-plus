@@ -25,6 +25,4 @@ def list_prompts(level: str = "general") -> list[Path]:
     data_dir = Config.DATA_DIR / level
     if not data_dir.is_dir():
         return []
-    return sorted(
-        p for p in data_dir.iterdir() if p.suffix in _SUPPORTED_EXTENSIONS
-    )
+    return sorted(p for p in data_dir.iterdir() if p.suffix in _SUPPORTED_EXTENSIONS)

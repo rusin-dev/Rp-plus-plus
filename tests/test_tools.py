@@ -1,4 +1,3 @@
-
 from src.api.tools import ToolRegistry
 from src.config import Config
 from src.core.event_bus import Event, EventBus
@@ -6,9 +5,7 @@ from src.core.event_bus import Event, EventBus
 
 def test_registry_builtin_schemas():
     registry = ToolRegistry()
-    names = [
-        s["function"]["name"] for s in registry.schemas if "function" in s
-    ]
+    names = [s["function"]["name"] for s in registry.schemas if "function" in s]
     assert names == [
         "ask",
         "shell",
@@ -49,9 +46,7 @@ def test_execute_shell_timeout(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     registry = ToolRegistry()
-    result = registry.execute(
-        "shell", '{"command": "sleep 100"}', EventBus()
-    )
+    result = registry.execute("shell", '{"command": "sleep 100"}', EventBus())
     assert "超时" in result
 
 
@@ -118,18 +113,14 @@ def test_execute_read_offset_limit(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
     (tmp_path / "f.txt").write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
     registry = ToolRegistry()
-    result = registry.execute(
-        "read", '{"file_path": "f.txt", "offset": 2, "limit": 2}', EventBus()
-    )
+    result = registry.execute("read", '{"file_path": "f.txt", "offset": 2, "limit": 2}', EventBus())
     assert result.startswith("b\nc")
     assert "已截断" in result
 
 
 def test_execute_read_default_limit_truncates(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
-    (tmp_path / "big.txt").write_text(
-        "\n".join(f"line{i}" for i in range(300)), encoding="utf-8"
-    )
+    (tmp_path / "big.txt").write_text("\n".join(f"line{i}" for i in range(300)), encoding="utf-8")
     registry = ToolRegistry()
     result = registry.execute("read", '{"file_path": "big.txt"}', EventBus())
     assert result.startswith("line0")
@@ -139,9 +130,7 @@ def test_execute_read_default_limit_truncates(monkeypatch, tmp_path):
 def test_execute_write_new_file_no_read_needed(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
     registry = ToolRegistry()
-    result = registry.execute(
-        "write", '{"file_path": "new.py", "content": "x"}', EventBus()
-    )
+    result = registry.execute("write", '{"file_path": "new.py", "content": "x"}', EventBus())
     assert "已写入" in result
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "x"
 
@@ -150,9 +139,7 @@ def test_execute_write_requires_read_first(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
     (tmp_path / "a.py").write_text("old\n", encoding="utf-8")
     registry = ToolRegistry()
-    result = registry.execute(
-        "write", '{"file_path": "a.py", "content": "new"}', EventBus()
-    )
+    result = registry.execute("write", '{"file_path": "a.py", "content": "new"}', EventBus())
     assert "error:" in result
     assert "read" in result
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "old\n"
@@ -163,9 +150,7 @@ def test_execute_write_after_read_allowed(monkeypatch, tmp_path):
     (tmp_path / "a.py").write_text("old\n", encoding="utf-8")
     registry = ToolRegistry()
     registry.execute("read", '{"file_path": "a.py"}', EventBus())
-    result = registry.execute(
-        "write", '{"file_path": "a.py", "content": "new"}', EventBus()
-    )
+    result = registry.execute("write", '{"file_path": "a.py", "content": "new"}', EventBus())
     assert "已写入" in result
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "new"
 
@@ -186,9 +171,7 @@ def test_execute_write_offset_replace(monkeypatch, tmp_path):
 
 def test_execute_grep(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
-    (tmp_path / "a.py").write_text(
-        "def foo():\n    return 1\n", encoding="utf-8"
-    )
+    (tmp_path / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("x = 2\n", encoding="utf-8")
     (tmp_path / ".venv").mkdir()
     (tmp_path / ".venv" / "skip.py").write_text("foo\n", encoding="utf-8")
@@ -205,9 +188,7 @@ def test_execute_grep_include_filter(monkeypatch, tmp_path):
     (tmp_path / "a.py").write_text("foo\n", encoding="utf-8")
     (tmp_path / "a.md").write_text("foo\n", encoding="utf-8")
     registry = ToolRegistry()
-    result = registry.execute(
-        "grep", '{"pattern": "foo", "include": "*.md"}', EventBus()
-    )
+    result = registry.execute("grep", '{"pattern": "foo", "include": "*.md"}', EventBus())
     assert "a.md" in result
     assert "a.py" not in result
 
@@ -290,9 +271,7 @@ def test_execute_web_search_ddg(monkeypatch):
     monkeypatch.setattr(Config, "SEARCH_BACKEND", "ddg")
     _mock_http(monkeypatch, _SAMPLE_DDG_HTML)
     registry = ToolRegistry()
-    result = registry.execute(
-        "web_search", '{"query": "python", "count": 2}', EventBus()
-    )
+    result = registry.execute("web_search", '{"query": "python", "count": 2}', EventBus())
     assert "Example Page" in result
     assert "https://example.com/page" in result
     assert "snippet" in result
@@ -353,9 +332,7 @@ def test_execute_web_fetch(monkeypatch):
 
 def test_execute_web_fetch_rejects_non_http(monkeypatch):
     registry = ToolRegistry()
-    result = registry.execute(
-        "web_fetch", '{"url": "file:///etc/passwd"}', EventBus()
-    )
+    result = registry.execute("web_fetch", '{"url": "file:///etc/passwd"}', EventBus())
     assert "error:" in result
 
 
@@ -373,9 +350,7 @@ def test_execute_web_fetch_truncates(monkeypatch):
 def test_delegate_unknown_agent(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "DATA_DIR", tmp_path)
     registry = ToolRegistry()
-    result = registry.execute(
-        "delegate", '{"agent": "nope", "task": "x"}', EventBus()
-    )
+    result = registry.execute("delegate", '{"agent": "nope", "task": "x"}', EventBus())
     assert result.startswith("error: 未知子 Agent: nope")
 
 

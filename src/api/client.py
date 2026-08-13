@@ -99,9 +99,7 @@ def stream_completion(
 
     if not tool_calls:
         if text:
-            messages.append(
-                ChatCompletionAssistantMessageParam(role="assistant", content=text)
-            )
+            messages.append(ChatCompletionAssistantMessageParam(role="assistant", content=text))
         return False, text
 
     assistant_tool_calls = [
@@ -251,9 +249,7 @@ class ChatClient:
             logger.exception("对话请求失败")
             self._bus.publish(Event(EventTypes.ERROR, str(exc)))
 
-    def _stream_once(
-        self, messages: list[ChatCompletionMessageParam], mode: str
-    ) -> bool:
+    def _stream_once(self, messages: list[ChatCompletionMessageParam], mode: str) -> bool:
         """执行一轮流式请求；若模型发起了工具调用则执行并返回 True。"""
         self._usage["calls"] += 1
         made, _ = stream_completion(

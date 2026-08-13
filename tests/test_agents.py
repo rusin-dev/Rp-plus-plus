@@ -89,9 +89,7 @@ def test_registry_get_and_names(monkeypatch, tmp_path):
 
 
 def test_registry_with_explicit_agents():
-    agent = SubAgent(
-        name="x", description="d", tools=["read"], prompt="p", path=Path("x.md")
-    )
+    agent = SubAgent(name="x", description="d", tools=["read"], prompt="p", path=Path("x.md"))
     registry = AgentRegistry([agent])
     assert registry.get("x") is agent
 
@@ -121,9 +119,7 @@ def test_subagent_runner_streams_and_returns(monkeypatch, tmp_path):
 
     fake_client = SimpleNamespace(
         chat=SimpleNamespace(
-            completions=SimpleNamespace(
-                create=lambda **kwargs: iter([_chunk("审查完成")])
-            )
+            completions=SimpleNamespace(create=lambda **kwargs: iter([_chunk("审查完成")]))
         )
     )
     monkeypatch.setattr(agents_module, "make_client", lambda config: fake_client)

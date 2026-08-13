@@ -58,9 +58,7 @@ class EventBus:
         except queue.Empty:
             return None
 
-    def await_event(
-        self, event_type: EventType, timeout: float | None = None
-    ) -> Event:
+    def await_event(self, event_type: EventType, timeout: float | None = None) -> Event:
         """阻塞等待指定类型的事件（跳过其他事件）。"""
         deadline = _deadline(timeout)
         while True:

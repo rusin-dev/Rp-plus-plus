@@ -15,9 +15,7 @@ _EVENT = CompleteEvent(completion_requested=False)
 def _completions(text: str, cursor_position: int | None = None):
     pos = cursor_position if cursor_position is not None else len(text)
     return list(
-        SlashCommandCompleter().get_completions(
-            Document(text=text, cursor_position=pos), _EVENT
-        )
+        SlashCommandCompleter().get_completions(Document(text=text, cursor_position=pos), _EVENT)
     )
 
 
@@ -45,9 +43,7 @@ def test_completer_hides_for_empty_input():
 def test_completion_replaces_whole_token():
     for c in _completions("/se"):
         assert c.start_position == -3
-    assert [c.start_position for c in _completions("/")] == [-1] * len(
-        COMMAND_DESCRIPTIONS
-    )
+    assert [c.start_position for c in _completions("/")] == [-1] * len(COMMAND_DESCRIPTIONS)
 
 
 def test_completion_has_meta_description():

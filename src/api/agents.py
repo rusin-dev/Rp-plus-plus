@@ -116,9 +116,7 @@ class AgentRegistry:
     """子 Agent 注册表：按名称查询。"""
 
     def __init__(self, agents: list[SubAgent] | None = None) -> None:
-        self._agents = {
-            a.name: a for a in (agents if agents is not None else load_agents())
-        }
+        self._agents = {a.name: a for a in (agents if agents is not None else load_agents())}
 
     def get(self, name: str) -> SubAgent | None:
         return self._agents.get(name)
@@ -200,10 +198,7 @@ class SubAgentRunner:
             return f"error: 子 Agent {agent_id} 执行失败: {exc}"
         result = last_text or f"（子 Agent {agent_id} 未返回文本）"
         if len(result) > SUBAGENT_RESULT_MAX_CHARS:
-            result = (
-                result[:SUBAGENT_RESULT_MAX_CHARS]
-                + f"…（已截断，全文共 {len(result)} 字符）"
-            )
+            result = result[:SUBAGENT_RESULT_MAX_CHARS] + f"…（已截断，全文共 {len(result)} 字符）"
         self._bus.publish(
             Event(
                 EventTypes.SUBAGENT_DONE,

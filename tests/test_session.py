@@ -28,9 +28,7 @@ def test_save_and_load_roundtrip(monkeypatch, tmp_path):
 
 def test_save_updates_updated_at(monkeypatch, tmp_path):
     store = _make_store(monkeypatch, tmp_path)
-    session = Session(
-        session_id="s1", model="m", system_prompt="p", messages=[]
-    )
+    session = Session(session_id="s1", model="m", system_prompt="p", messages=[])
     store.save(session)
     first = session.updated_at
     session.messages = [{"role": "user", "content": "x"}]
@@ -49,9 +47,7 @@ def test_load_missing_returns_none(monkeypatch, tmp_path):
 def test_list_sorted_newest_first(monkeypatch, tmp_path):
     store = _make_store(monkeypatch, tmp_path)
     for session_id in ["20260813-100000", "20260813-110000", "20260813-120000"]:
-        store.save(
-            Session(session_id=session_id, model="m", system_prompt="p")
-        )
+        store.save(Session(session_id=session_id, model="m", system_prompt="p"))
     ids = [s.session_id for s in store.list()]
     assert ids == [
         "20260813-120000",

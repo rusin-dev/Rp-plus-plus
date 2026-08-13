@@ -9,18 +9,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_FROZEN = bool(getattr(sys, "frozen", False))
+_FROZEN = bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
 
 
 def _resolve_root() -> Path:
-    """项目根目录；PyInstaller 冻结运行时锚定到当前工作目录（工作区）。"""
+    """项目根目录；打包运行时锚定到当前工作目录（工作区）。"""
     if _FROZEN:
         return Path.cwd()
     return Path(__file__).resolve().parent.parent
 
 
 def _resolve_data_dir() -> Path:
-    """提示词数据目录；冻结运行时读取捆绑进 exe 的 src/data。"""
+    """提示词数据目录；打包运行时读取捆绑进可执行程序的 src/data。"""
     if _FROZEN:
         bundle = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
         return bundle / "src" / "data"
@@ -201,9 +201,7 @@ class Config:
         """切换到指定 provider，并重置到其默认模型。"""
         provider = cls.get_provider(name)
         if provider is None:
-            raise ValueError(
-                f"未知的 provider：{name}，可用：{', '.join(cls.providers()) or '无'}"
-            )
+            raise ValueError(f"未知的 provider：{name}，可用：{', '.join(cls.providers()) or '无'}")
         cls.ACTIVE_PROVIDER = provider.name
         cls.CUSTOM_API_KEY = provider.api_key
         cls.CUSTOM_API_URL = provider.api_url
@@ -217,8 +215,7 @@ class Config:
         provider = cls.active_provider()
         if provider is not None and provider.models and model not in provider.models:
             raise ValueError(
-                f"模型 {model} 不在 {provider.name} 的可用列表："
-                f"{', '.join(provider.models)}"
+                f"模型 {model} 不在 {provider.name} 的可用列表：{', '.join(provider.models)}"
             )
         cls.ACTIVE_MODEL = model
         cls.RP_MODEL = model
@@ -240,9 +237,7 @@ class Config:
     @classmethod
     def set_variant(cls, variant: str) -> None:
         if variant not in cls.VARIANT_PARAMS:
-            raise ValueError(
-                f"未知的思考强度：{variant}，可用：{', '.join(cls.VARIANT_PARAMS)}"
-            )
+            raise ValueError(f"未知的思考强度：{variant}，可用：{', '.join(cls.VARIANT_PARAMS)}")
         cls.ACTIVE_VARIANT = variant
 
     # ---------- Modes ----------
@@ -268,9 +263,7 @@ class Config:
     def set_mode(cls, mode: str) -> None:
         mode = mode.lower()
         if mode not in cls.MODES:
-            raise ValueError(
-                f"未知的模式：{mode}，可用：{', '.join(cls.MODES)}"
-            )
+            raise ValueError(f"未知的模式：{mode}，可用：{', '.join(cls.MODES)}")
         cls.ACTIVE_MODE = mode
 
     @classmethod
@@ -285,11 +278,7 @@ class Config:
         up = name.upper()
         api_key = os.getenv(f"PROVIDER_{up}_API_KEY", "").strip()
         api_url = os.getenv(f"PROVIDER_{up}_API_URL", "").strip()
-        models = [
-            m.strip()
-            for m in os.getenv(f"PROVIDER_{up}_MODELS", "").split(",")
-            if m.strip()
-        ]
+        models = [m.strip() for m in os.getenv(f"PROVIDER_{up}_MODELS", "").split(",") if m.strip()]
         default_model = os.getenv(f"PROVIDER_{up}_DEFAULT_MODEL", "").strip()
         if default_model and default_model not in models:
             models.insert(0, default_model)

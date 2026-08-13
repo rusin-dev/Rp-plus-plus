@@ -15,9 +15,7 @@ def test_non_frozen_paths_match_source_tree():
 
 def test_frozen_paths_use_cwd_and_bundle(monkeypatch, tmp_path):
     monkeypatch.setattr(config_module, "_FROZEN", True)
-    monkeypatch.setattr(
-        sys, "_MEIPASS", str(tmp_path / "bundle"), raising=False
-    )
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "bundle"), raising=False)
     monkeypatch.chdir(tmp_path)
     assert config_module._resolve_root() == tmp_path
     assert config_module._resolve_data_dir() == tmp_path / "bundle" / "src" / "data"
@@ -31,17 +29,27 @@ def test_config_attrs_stable_in_non_frozen_env():
 # ---------- build_exe.py 参数构造 ----------
 
 
-def test_build_args_for_pyinstaller():
+def test_build_args_for_nuitka():
     from scripts.build_exe import build_args
 
     args = build_args()
     assert "--onefile" in args
-    assert "--console" in args
-    assert args[args.index("--name") + 1] == "rp"
-    data_spec = args[args.index("--add-data") + 1]
+    assert "--standalone" in args
+    assert "--assume-yes-for-downloads" in args
+    assert any(a == "--output-filename=rp" for a in args)
+    data_spec = args[args.index("--include-data-dir") + 1]
     assert "src/data" in data_spec
-    assert Path(args[args.index("--paths") + 1]).name == "rp--your-programming-co-pilot"
+    assert Path(args[args.index("--output-dir") + 1]).name == "dist"
     assert args[-1].endswith("launcher.py")
+
+
+def test_build_args_data_spec_targets_src_data():
+    from scripts.build_exe import build_args
+
+    data_spec = build_args()[build_args().index("--include-data-dir") + 1]
+    source, target = data_spec.split("=")
+    assert Path(source).is_dir()
+    assert target == "src/data"
 
 
 def test_build_main_dry_run():

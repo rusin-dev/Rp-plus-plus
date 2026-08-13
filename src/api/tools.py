@@ -26,9 +26,7 @@ _WEB_TIMEOUT_SECONDS = 20
 _WEB_FETCH_MAX_BYTES = 1_000_000  # 1 MB
 _WEB_FETCH_DEFAULT_CHARS = 8000
 _WEB_SEARCH_MAX_RESULTS = 10
-_WEB_USER_AGENT = (
-    "Mozilla/5.0 (compatible; rp-co-pilot/0.1; +https://github.com/)"
-)
+_WEB_USER_AGENT = "Mozilla/5.0 (compatible; rp-co-pilot/0.1; +https://github.com/)"
 _DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 _BING_SEARCH_URL = "https://www.bing.com/search"
 _SKIP_DIRS = {
@@ -47,6 +45,7 @@ _SKIP_DIRS = {
 
 
 # ---------- 基础工具 ----------
+
 
 def _ask(bus: EventBus, question: str) -> str:
     """通过事件总线向用户提问并等待回答。"""
@@ -67,11 +66,7 @@ def _run_shell(bus: EventBus, command: str) -> str:
         )
     except subprocess.TimeoutExpired:
         return f"error: 命令执行超时（{_SHELL_TIMEOUT_SECONDS}s）"
-    return (
-        f"exit code: {result.returncode}\n"
-        f"stdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
+    return f"exit code: {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
 
 
 def _read_file(
@@ -197,22 +192,16 @@ def _grep(
             if regex.search(line):
                 results.append(f"{p}:{lineno}: {line.strip()[:200]}")
                 if len(results) >= _MAX_GREP_RESULTS:
-                    return (
-                        f"匹配结果过多，仅显示前 {_MAX_GREP_RESULTS} 条:\n"
-                        + "\n".join(results)
-                    )
+                    return f"匹配结果过多，仅显示前 {_MAX_GREP_RESULTS} 条:\n" + "\n".join(results)
     return "\n".join(results) if results else "无匹配"
 
 
 # ---------- 网络工具 ----------
 
-def _http_get(
-    url: str, max_bytes: int | None = None, timeout: float = _WEB_TIMEOUT_SECONDS
-) -> str:
+
+def _http_get(url: str, max_bytes: int | None = None, timeout: float = _WEB_TIMEOUT_SECONDS) -> str:
     """发起 GET 请求并返回解码后的文本。"""
-    request = urllib.request.Request(
-        url, headers={"User-Agent": _WEB_USER_AGENT}
-    )
+    request = urllib.request.Request(url, headers={"User-Agent": _WEB_USER_AGENT})
     try:
         response = urllib.request.urlopen(request, timeout=timeout)
     except urllib.error.HTTPError as exc:
@@ -250,9 +239,7 @@ def _web_fetch(bus: EventBus, url: str, max_chars: int = 8000) -> str:
     return text
 
 
-def _delegate(
-    bus: EventBus, agent: str, task: str, context: str | None = None
-) -> str:
+def _delegate(bus: EventBus, agent: str, task: str, context: str | None = None) -> str:
     """把任务委派给指定子 Agent 执行，返回其最终结果。"""
     from .agents import AgentRegistry, SubAgentRunner
 
@@ -304,9 +291,7 @@ def _format_results(results: list[dict[str, str]], count: int = 5) -> str:
     limit = max(1, min(int(count or 5), _WEB_SEARCH_MAX_RESULTS))
     lines: list[str] = []
     for index, result in enumerate(results[:limit], 1):
-        lines.append(
-            f"{index}. {result['title']}\n   {result['url']}\n   {result['snippet']}"
-        )
+        lines.append(f"{index}. {result['title']}\n   {result['url']}\n   {result['snippet']}")
     return "\n".join(lines)
 
 
@@ -319,18 +304,12 @@ def _parse_ddg_results(html_text: str) -> list[dict[str, str]]:
         title_match = re.search(r'class="result__a"[^>]*>(.*?)</a>', block, re.S)
         if not (href_match and title_match):
             continue
-        snippet_match = re.search(
-            r'class="result__snippet"[^>]*>(.*?)</a>', block, re.S
-        )
+        snippet_match = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, re.S)
         results.append(
             {
                 "title": _strip_html_tags(title_match.group(1)),
                 "url": _decode_ddg_url(href_match.group(1)),
-                "snippet": (
-                    _strip_html_tags(snippet_match.group(1))
-                    if snippet_match
-                    else ""
-                ),
+                "snippet": (_strip_html_tags(snippet_match.group(1)) if snippet_match else ""),
             }
         )
     return results
@@ -341,23 +320,15 @@ def _parse_bing_results(html_text: str) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     blocks = re.split(r'<li[^>]*class="b_algo"', html_text)[1:]
     for block in blocks:
-        anchor = re.search(
-            r'<h2[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, re.S
-        )
+        anchor = re.search(r'<h2[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, re.S)
         if not anchor:
             continue
-        snippet_match = re.search(
-            r'class="b_caption"[^>]*>.*?<p[^>]*>(.*?)</p>', block, re.S
-        )
+        snippet_match = re.search(r'class="b_caption"[^>]*>.*?<p[^>]*>(.*?)</p>', block, re.S)
         results.append(
             {
                 "title": _strip_html_tags(anchor.group(2)),
                 "url": anchor.group(1),
-                "snippet": (
-                    _strip_html_tags(snippet_match.group(1))
-                    if snippet_match
-                    else ""
-                ),
+                "snippet": (_strip_html_tags(snippet_match.group(1)) if snippet_match else ""),
             }
         )
     return results
@@ -608,6 +579,7 @@ _TOOL_HANDLERS: dict[str, Callable[..., str]] = {
 
 # ---------- 注册表 ----------
 
+
 class ToolRegistry:
     """工具 schema 与执行器的注册表。"""
 
@@ -645,14 +617,8 @@ class ToolRegistry:
     def filtered(self, names: set[str]) -> ToolRegistry:
         """返回仅包含指定工具名的注册表副本（不修改自身）。"""
         new = ToolRegistry.__new__(ToolRegistry)
-        new._schemas = [
-            schema for schema in self._schemas if _schema_name(schema) in names
-        ]
-        new._handlers = {
-            name: handler
-            for name, handler in self._handlers.items()
-            if name in names
-        }
+        new._schemas = [schema for schema in self._schemas if _schema_name(schema) in names]
+        new._handlers = {name: handler for name, handler in self._handlers.items() if name in names}
         new._read_files = self._read_files
         return new
 
@@ -682,6 +648,7 @@ class ToolRegistry:
 
 
 # ---------- 辅助函数 ----------
+
 
 def _schema_name(schema: ChatCompletionToolUnionParam) -> str | None:
     function = schema.get("function")

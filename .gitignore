@@ -25,7 +25,7 @@ wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
+# 打包工具产物
 *.manifest
 *.spec
 

@@ -31,9 +31,7 @@ def _client(monkeypatch, bus: EventBus) -> ChatClient:
 
 def _collect(monkeypatch, bus: EventBus, stream, user_message="你好"):
     client = _client(monkeypatch, bus)
-    monkeypatch.setattr(
-        client._client.chat.completions, "create", lambda **kwargs: stream()
-    )
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
     client._run(user_message, "system prompt", [])
     return bus.drain()
 
@@ -88,9 +86,7 @@ def test_many_tool_rounds_conclude_with_final_answer(monkeypatch):
             yield _chunk("收尾总结")
 
     client = _client(monkeypatch, bus)
-    monkeypatch.setattr(
-        client._client.chat.completions, "create", lambda **kwargs: stream()
-    )
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
     client._run("完成一个需要很多命令的任务", "system", [])
     events = bus.drain()
     assert events[-1].type == EventTypes.ASSISTANT_DONE
@@ -174,9 +170,7 @@ def test_stream_captures_usage(monkeypatch):
         yield _chunk("你")
         yield _usage_chunk(100, 20)
 
-    monkeypatch.setattr(
-        client._client.chat.completions, "create", lambda **kwargs: stream()
-    )
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
     client._run("hi", "system", [])
     usage = client.usage_summary()
     assert usage["input_tokens"] == 100
@@ -201,9 +195,7 @@ def test_usage_accumulates_across_rounds(monkeypatch):
             yield _usage_chunk(10, 5)
 
     client = _client(monkeypatch, bus)
-    monkeypatch.setattr(
-        client._client.chat.completions, "create", lambda **kwargs: stream()
-    )
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
     client._run("hi", "system", [])
     usage = client.usage_summary()
     assert usage["input_tokens"] == 60
@@ -232,18 +224,14 @@ def test_stream_uses_active_model(monkeypatch):
 def test_stream_completion_subagent_events(monkeypatch):
     bus = EventBus()
     client = _client(monkeypatch, bus)
-    monkeypatch.setattr(
-        client._tools, "execute", lambda name, args, bus: "found: line1"
-    )
+    monkeypatch.setattr(client._tools, "execute", lambda name, args, bus: "found: line1")
 
     def stream():
         yield _chunk("子")
         yield _tool_chunk(0, "call_9", "grep", '{"pattern": "x"}')
         yield _chunk("结果")
 
-    monkeypatch.setattr(
-        client._client.chat.completions, "create", lambda **kwargs: stream()
-    )
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
     messages = [
         ChatCompletionSystemMessageParam(role="system", content="角色"),
         ChatCompletionUserMessageParam(role="user", content="任务"),
@@ -280,9 +268,7 @@ def test_stream_completion_main_events_unchanged(monkeypatch):
     def stream():
         yield _tool_chunk(0, "call_1", "read", '{"file_path": "a.py"}')
 
-    monkeypatch.setattr(
-        client._client.chat.completions, "create", lambda **kwargs: stream()
-    )
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
     messages = [
         ChatCompletionSystemMessageParam(role="system", content="s"),
         ChatCompletionUserMessageParam(role="user", content="u"),
