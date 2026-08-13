@@ -37,7 +37,7 @@ def test_build_args_for_nuitka():
     assert "--standalone" in args
     assert "--assume-yes-for-downloads" in args
     assert any(a == "--output-filename=rp" for a in args)
-    data_spec = args[args.index("--include-data-dir") + 1]
+    data_spec = next(a for a in args if a.startswith("--include-data-dir="))
     assert "src/data" in data_spec
     assert Path(args[args.index("--output-dir") + 1]).name == "dist"
     assert args[-1].endswith("launcher.py")
@@ -46,7 +46,9 @@ def test_build_args_for_nuitka():
 def test_build_args_data_spec_targets_src_data():
     from scripts.build_exe import build_args
 
-    data_spec = build_args()[build_args().index("--include-data-dir") + 1]
+    data_spec = next(
+        a for a in build_args() if a.startswith("--include-data-dir=")
+    ).removeprefix("--include-data-dir=")
     source, target = data_spec.split("=")
     assert Path(source).is_dir()
     assert target == "src/data"
