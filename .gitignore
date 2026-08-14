@@ -83,11 +83,22 @@ ipython_config.py
 celerybeat-schedule
 celerybeat.pid
 
-# Django stuff
+# Logs
+log/
+logs/
 *.log
+
+# Django stuff
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# Type checking / linting
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.pylint.d/
 
 # macOS
 .DS_Store

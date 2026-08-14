@@ -4,7 +4,7 @@
 
 ## 简介
 
-这是一个基于 Python 的命令行 AI 编程助手。它通过系统提示词（Prompt）约束模型扮演"项目飞行员（Project Pilot）"的角色，将模糊的用户意图转化为清晰的执行蓝图，支持流式输出、交互式对话与终端内 Markdown 实时渲染（基于 rich）。
+这是一个基于 Python 的命令行 AI 编程助手。它通过系统提示词（Prompt）约束模型扮演"项目飞行员（Project Pilot）"的角色，将模糊的用户意图转化为清晰的执行蓝图，支持流式输出、交互式对话、终端内 Markdown 实时渲染（基于 rich）、多供应商切换、会话恢复与子 Agent 领域委派。
 
 ## 快速开始
 
@@ -23,10 +23,15 @@ python -m venv .venv
 # 安装依赖
 pip install -r requirements.txt
 
+# （可选）以可执行命令方式安装
+pip install -e .
+
 # 配置 API 密钥
 cp .env.example .env
-# 编辑 .env，填入 CUSTOM_API_KEY
+# 编辑 .env，填入 API 密钥（PROVIDER_<名称>_API_KEY，或旧版 CUSTOM_API_KEY）
 ```
+
+安装完成后，即可使用 `rp` 命令（等价于 `python -m src.main`）。
 
 ## 使用
 
@@ -40,9 +45,23 @@ python -m src.main
 # 指定其他提示词文件
 python -m src.main -p SYSTEM_PROMPT.md -l general
 
+# 以指定工作模式启动（plan / build / auto）
+python -m src.main -M plan -m "帮我设计一个用户登录模块"
+
 # 查看可用的提示词文件
 python -m src.main --list-prompts
 ```
+
+### 工作模式
+
+| 模式 | 说明 |
+| --- | --- |
+| `plan` | 仅规划，不修改任何文件（防御性禁用 `shell` / `write` 工具） |
+| `build` | 直接实现需求 |
+| `auto` | 自动规划并实现（默认） |
+
+- 交互模式中输入 `/mode` 查看/切换，或按 `Shift+Tab` 循环切换；
+- 命令行可用 `-M/--mode <模式>` 指定启动模式。
 
 ### 子 Agent（领域委派）
 
@@ -68,6 +87,7 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 | `/variants` | 查看/切换思考强度（`fast` / `default` / `deep`） |
 | `/models` | 列出当前供应商的可用模型；`/models <名称>` 切换 |
 | `/connect` | 列出已配置的供应商；`/connect <名称>` 切换 |
+| `/mode` | 查看/切换工作模式（`plan` / `build` / `auto`） |
 | `/compact` | 压缩对话上下文（保留最近 20 条，可用 `/compact <n>` 指定） |
 | `/usage` | 查看 token 用量与上下文窗口占用 |
 | `/init` | 在工作区根目录生成 `AGENTS.md`（`/init -f` 覆盖已有文件） |
@@ -90,10 +110,15 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 | `PROVIDER_<名称>_MODELS` | 可用模型（逗号分隔） | 无 |
 | `PROVIDER_<名称>_DEFAULT_MODEL` | 该供应商默认模型 | 列表第一个 |
 | `RP_VARIANT` | 思考强度（`fast` / `default` / `deep`） | `default` |
-| `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`） | `bing` |
+| `RP_MODE` | 工作模式（`plan` / `build` / `auto`） | `auto` |
+| `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`，`auto` 表示 ddg 失败时回退 bing） | `bing` |
 | `CUSTOM_API_KEY` / `CUSTOM_API_URL` / `RP_MODEL` | 旧版单供应商配置（未配置 `PROVIDER_*` 时生效） | - |
 | `LOG_LEVEL` | 日志级别 | `INFO` |
 | `LOG_DIR` | 日志目录 | `log/` |
+| `SESSION_DIR` | 会话存储目录 | `.rp/sessions/` |
+| `RICH_COLOR_SYSTEM` | 终端色彩系统（`auto` / `standard` / `256` / `truecolor` / `windows`） | `auto` |
+| `RICH_THEME` | rich 主题 | 无 |
+| `TAB_SIZE` | 制表符宽度 | `8` |
 
 ## 目录结构
 
@@ -102,40 +127,66 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 ```
 src/
 ├── main.py              # 入口：组装三层并启动
-├── config.py            # 环境变量配置与校验
+├── config.py            # 环境变量配置与校验（多供应商 / 模式 / 变体）
 ├── core/                # 基础设施层
 │   ├── logger.py        # 日志（文件 + 控制台）
 │   ├── event_bus.py     # 事件总线（线程间通信）
-│   └── prompt.py        # 提示词加载
+│   ├── prompt.py        # 提示词加载
+│   └── session.py       # 会话持久化（JSON 存储 / 加载 / 恢复）
 ├── api/                 # 能力层
 │   ├── client.py        # OpenAI 客户端（后台线程 + 工具调用循环）
+│   ├── agents.py        # 子 Agent 定义加载与独立运行循环
 │   └── tools.py         # 工具定义（schema）与执行器
 ├── ui/                  # 表现层
-│   └── app.py           # rich TUI（Layout + Live 渲染）
+│   ├── app.py           # rich TUI（Live 渲染 + 事件消费 + 会话恢复）
+│   ├── input.py         # 输入框（斜杠命令补全 / 模式徽标 / 键位绑定）
+│   ├── mascot.py        # 启动吉祥物
+│   └── subagent_panel.py# 子 Agent 执行面板（实时展示 / 折叠）
 ├── data/general/        # 系统提示词
 └── data/agents/         # 子 Agent 提示词（frontmatter 声明角色与工具权限）
-tests/                   # pytest 测试
+scripts/
+├── build_exe.py         # Nuitka 一键编译单文件可执行程序
+└── launcher.py          # 打包入口（转发到 src.main:main）
+tests/                   # pytest 测试（core / api / ui / agents / session 等）
+.github/workflows/       # GitHub Actions：CI / Format / Release / Snapshot / Auto Merge
+pyproject.toml           # 项目元数据、ruff 与 pytest 配置、`rp` 命令入口
+cost_map.json            # 主流模型价格参考（元 / 1M tokens，供 /usage 成本估算）
 ```
 
 ### 三层职责
 
 | 层 | 职责 | 依赖 |
 | --- | --- | --- |
-| `core` | 日志、线程间通信（事件总线）、提示词加载 | 仅标准库 + config |
-| `api` | OpenAI 请求、流式输出、工具定义与执行 | core |
-| `ui` | rich TUI：渲染消息、输入交互、消费事件 | core + api |
+| `core` | 日志、线程间通信（事件总线）、提示词加载、会话持久化 | 仅标准库 + config |
+| `api` | OpenAI 请求、流式输出、工具定义与执行、子 Agent 运行 | core |
+| `ui` | rich TUI：渲染消息、输入交互、子 Agent 面板、消费事件 | core + api |
 
-内置工具：`ask`（向用户提问，经事件总线交互）、`read`（读工作区文件）、`write`（写工作区文件）、`grep`（正则搜索）、`shell`（执行命令）、`web_search`（DuckDuckGo 网页搜索）、`web_fetch`（抓取网页内容）、`delegate`（把领域专长任务委派给子 Agent）。读写工具默认锚定工作区根目录，防止越界访问。
+内置工具：`ask`（向用户提问，经事件总线交互）、`read`（读工作区文件）、`write`（写工作区文件）、`grep`（正则搜索）、`shell`（执行命令）、`web_search`（网页搜索，默认 Bing，可用 `SEARCH_BACKEND` 切换）、`web_fetch`（抓取网页内容）、`delegate`（把领域专长任务委派给子 Agent）。读写工具默认锚定工作区根目录，防止越界访问。
 
-通信模型：UI 主线程负责渲染与输入；API 请求在后台线程执行，通过 `EventBus` 发布 token / 工具调用 / 错误等事件，UI 消费事件实时更新界面。工具 `ask` 依赖总线反向向 UI 提问并等待用户回答，形成完整闭环。
+通信模型：UI 主线程负责渲染与输入；API 请求在后台线程执行，通过 `EventBus` 发布 token / 工具调用 / 子 Agent 事件 / 错误等事件，UI 消费事件实时更新界面。工具 `ask` 依赖总线反向向 UI 提问并等待用户回答，形成完整闭环。
 
 ## 开发
 
 ```bash
 pip install -r requirements-dev.txt
-ruff check .
-pytest
+ruff check .            # 代码检查
+ruff format .           # 代码格式化
+pytest                  # 运行测试（CI 覆盖 Python 3.10 ~ 3.13）
 ```
+
+## 打包发布
+
+使用 [Nuitka](https://nuitka.net/) 将项目编译为单文件可执行程序（不跨平台，需在目标系统上分别构建）：
+
+```bash
+# 完整构建（产物在 dist/ 下：Windows -> rp.exe，Linux/macOS -> rp）
+python scripts/build_exe.py
+
+# 仅预览将要执行的 Nuitka 命令
+python scripts/build_exe.py --dry-run
+```
+
+GitHub Actions 已内置 `Release` / `Snapshot` 工作流，可在打 tag 或定时任务时自动构建 Windows / Linux / macOS 三平台产物并发布。
 
 ## 贡献
 
