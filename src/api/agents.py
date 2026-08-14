@@ -24,6 +24,7 @@ _ALL_TOOLS = {
     "shell",
     "read",
     "write",
+    "edit",
     "grep",
     "web_search",
     "web_fetch",

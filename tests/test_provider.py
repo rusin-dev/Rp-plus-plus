@@ -188,7 +188,7 @@ def test_mode_instructions(monkeypatch):
 
 
 def test_mode_tool_exclusions():
-    assert Config.mode_tool_exclusions("plan") == {"shell", "write"}
+    assert Config.mode_tool_exclusions("plan") == {"shell", "write", "edit"}
     assert Config.mode_tool_exclusions("build") == set()
     assert Config.mode_tool_exclusions("auto") == set()
     assert Config.mode_tool_exclusions("nope") == set()

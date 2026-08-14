@@ -12,9 +12,11 @@ from prompt_toolkit.widgets import Frame
 
 from ..config import Config
 from ..core.event_bus import Event, EventBus, EventTypes
+from .formatters import extract_read_path, format_grep_status, format_tool_call
 
 _PUMP_INTERVAL = 0.05
 _TOOL_RESULT_SUMMARY_LEN = 200
+_WRITE_PREVIEW_LINES = 200
 
 
 class SubAgentPanel:
@@ -33,6 +35,8 @@ class SubAgentPanel:
         self._result = ""
         self._error: str | None = None
         self._app: Application | None = None
+        self._pending_read: str | None = None
+        self._last_tool: str | None = None
 
     # ---------- 事件处理（可单测） ----------
 
@@ -41,12 +45,29 @@ class SubAgentPanel:
         if event.type == EventTypes.SUBAGENT_TOKEN:
             self._append(data.get("text", ""))
         elif event.type == EventTypes.SUBAGENT_TOOL_CALL:
-            self._append(f"⎿ {data.get('name')}({data.get('arguments')})")
+            name = data.get("name", "?")
+            arguments = data.get("arguments", "")
+            self._last_tool = name
+            self._pending_read = extract_read_path(arguments) if name == "read" else None
+            self._append(f"⎿ {format_tool_call(name, arguments)}")
         elif event.type == EventTypes.SUBAGENT_TOOL_RESULT:
             result = str(data.get("result", ""))
-            summary = " ".join(result.split())[:_TOOL_RESULT_SUMMARY_LEN]
-            suffix = "…" if len(summary) >= _TOOL_RESULT_SUMMARY_LEN else ""
-            self._append(f"→ {summary}{suffix}")
+            last_tool = self._last_tool
+            self._last_tool = None
+            pending = self._pending_read
+            self._pending_read = None
+            if pending is not None and not result.startswith("error:"):
+                self._append(f"→ 已读取 {pending}")
+            elif last_tool == "grep":
+                self._append(f"→ {format_grep_status(result)}")
+            else:
+                summary = " ".join(result.split())[:_TOOL_RESULT_SUMMARY_LEN]
+                suffix = "…" if len(summary) >= _TOOL_RESULT_SUMMARY_LEN else ""
+                self._append(f"→ {summary}{suffix}")
+        elif event.type == EventTypes.FILE_WRITTEN:
+            self._append_written(data)
+        elif event.type == EventTypes.FILE_DIFF:
+            self._append_diff(data)
         elif event.type == EventTypes.SUBAGENT_DONE:
             self._result = data.get("result", "")
             self._done = True
@@ -55,6 +76,24 @@ class SubAgentPanel:
             self._error = data.get("error", "")
             self._done = True
             self._append(f"✖ {self._error}")
+
+    def _append_written(self, data: dict) -> None:
+        content = str(data.get("content", ""))
+        if not content:
+            return
+        lines = content.splitlines()
+        if len(lines) > _WRITE_PREVIEW_LINES:
+            lines = lines[:_WRITE_PREVIEW_LINES]
+            lines.append(f"…（共 {len(content.splitlines())} 行，仅预览前 {_WRITE_PREVIEW_LINES} 行）")
+        self._append("写入了：" + data.get("path", ""))
+        self._append("\n".join(lines))
+
+    def _append_diff(self, data: dict) -> None:
+        diff = str(data.get("diff", ""))
+        if not diff:
+            return
+        self._append(f"编辑了：{data.get('path', '')}")
+        self._append(diff)
 
     def _append(self, text: str) -> None:
         if not text:
@@ -118,7 +157,10 @@ class SubAgentPanel:
     async def _pump(self) -> None:
         while not self._done:
             for event in self._bus.drain():
-                if event.type.startswith("subagent_"):
+                if event.type.startswith("subagent_") or event.type in {
+                    EventTypes.FILE_WRITTEN,
+                    EventTypes.FILE_DIFF,
+                }:
                     self.handle_event(event)
             if self._app is not None:
                 self._app.invalidate()

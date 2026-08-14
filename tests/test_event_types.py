@@ -13,3 +13,8 @@ def test_subagent_event_types_defined():
     for name in names:
         value = getattr(EventTypes, name)
         assert isinstance(value, str) and value.startswith("subagent_")
+
+
+def test_file_event_types_defined():
+    assert EventTypes.FILE_WRITTEN == "file_written"
+    assert EventTypes.FILE_DIFF == "file_diff"

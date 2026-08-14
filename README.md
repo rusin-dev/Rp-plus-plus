@@ -140,6 +140,8 @@ src/
 ├── ui/                  # 表现层
 │   ├── app.py           # rich TUI（Live 渲染 + 事件消费 + 会话恢复）
 │   ├── input.py         # 输入框（斜杠命令补全 / 模式徽标 / 键位绑定）
+│   ├── cancel_watcher.py# 后台监听连按两次 ESC，触发 CANCEL 事件以中断当前回答
+│   ├── formatters.py    # 工具调用参数压缩为可读 name(参数) 展示文本
 │   ├── mascot.py        # 启动吉祥物
 │   └── subagent_panel.py# 子 Agent 执行面板（实时展示 / 折叠）
 ├── data/general/        # 系统提示词
@@ -161,7 +163,7 @@ cost_map.json            # 主流模型价格参考（元 / 1M tokens，供 /usa
 | `api` | OpenAI 请求、流式输出、工具定义与执行、子 Agent 运行 | core |
 | `ui` | rich TUI：渲染消息、输入交互、子 Agent 面板、消费事件 | core + api |
 
-内置工具：`ask`（向用户提问，经事件总线交互）、`read`（读工作区文件）、`write`（写工作区文件）、`grep`（正则搜索）、`shell`（执行命令）、`web_search`（网页搜索，默认 Bing，可用 `SEARCH_BACKEND` 切换）、`web_fetch`（抓取网页内容）、`delegate`（把领域专长任务委派给子 Agent）。读写工具默认锚定工作区根目录，防止越界访问。
+内置工具：`ask`（向用户提问，经事件总线交互）、`read`（读工作区文件）、`write`（写工作区文件，写入内容以代码框预览）、`edit`（对已存在文件做精确替换，修改以 git 风格 diff 展示）、`grep`（正则搜索）、`shell`（执行命令）、`web_search`（网页搜索，默认 Bing，可用 `SEARCH_BACKEND` 切换）、`web_fetch`（抓取网页内容）、`delegate`（把领域专长任务委派给子 Agent）。工具调用参数在终端以可读形式展示，不再显示原始 JSON。读写工具默认锚定工作区根目录，防止越界访问。
 
 通信模型：UI 主线程负责渲染与输入；API 请求在后台线程执行，通过 `EventBus` 发布 token / 工具调用 / 子 Agent 事件 / 错误等事件，UI 消费事件实时更新界面。工具 `ask` 依赖总线反向向 UI 提问并等待用户回答，形成完整闭环。
 

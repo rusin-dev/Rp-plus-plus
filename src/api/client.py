@@ -46,13 +46,17 @@ def stream_completion(
     mode: str,
     agent_id: str | None = None,
     record_usage: Callable[[object], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[bool, str]:
     """执行一轮流式请求并处理工具调用，返回 (是否发起工具调用, 累积文本)。
 
     agent_id 为 None 时发布主对话事件（TOKEN/TOOL_CALL/TOOL_RESULT）；
     否则发布带 agent_id 的子 Agent 事件（SUBAGENT_TOKEN/SUBAGENT_TOOL_CALL/
     SUBAGENT_TOOL_RESULT）。record_usage 非空时把 usage 回调给它（用于主对话计数）。
+    cancel_event 置位时中止本轮流式与工具执行。
     """
+    if cancel_event is not None and cancel_event.is_set():
+        return False, ""
     extra_body = config.active_variant_params()
     stream = client.chat.completions.create(
         model=config.active_model(),
@@ -65,8 +69,12 @@ def stream_completion(
 
     text = ""
     tool_calls: dict[int, dict[str, str]] = {}
+    cancelled = False
 
     for chunk in stream:
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
         usage = getattr(chunk, "usage", None)
         if usage is not None and record_usage is not None:
             record_usage(usage)
@@ -96,6 +104,15 @@ def stream_completion(
                     slot["name"] = tc.function.name
                 if tc.function.arguments:
                     slot["arguments"] += tc.function.arguments
+
+    if cancelled:
+        try:
+            stream.close()
+        except Exception:
+            pass
+        if text:
+            messages.append(ChatCompletionAssistantMessageParam(role="assistant", content=text))
+        return False, text
 
     if not tool_calls:
         if text:
@@ -185,6 +202,7 @@ class ChatClient:
             "last_input_tokens": 0,
             "last_total_tokens": 0,
         }
+        self._cancel = threading.Event()
 
     def usage_summary(self) -> dict:
         """返回本会话累计的 token 用量快照。"""
@@ -226,12 +244,17 @@ class ChatClient:
         )
         thread.start()
 
+    def cancel(self) -> None:
+        """请求中断当前回答；已在流式/工具循环内生效。"""
+        self._cancel.set()
+
     def _run(
         self,
         user_message: str,
         system_prompt: str,
         history: list[ChatCompletionMessageParam],
     ) -> None:
+        self._cancel.clear()
         mode = self._config.ACTIVE_MODE
         instructions = self._config.mode_instructions(mode)
         if instructions:
@@ -242,8 +265,9 @@ class ChatClient:
             ChatCompletionUserMessageParam(role="user", content=user_message),
         ]
         try:
-            while self._stream_once(messages, mode):
-                pass
+            made = True
+            while made and not self._cancel.is_set():
+                made = self._stream_once(messages, mode)
             self._bus.publish(Event(EventTypes.ASSISTANT_DONE))
         except Exception as exc:
             logger.exception("对话请求失败")
@@ -261,5 +285,6 @@ class ChatClient:
             mode,
             agent_id=None,
             record_usage=self._record_usage,
+            cancel_event=self._cancel,
         )
         return made

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
@@ -35,6 +35,8 @@ INPUT_STYLE = Style.from_dict(
         "tool-prompt": "yellow",
         "input": "cyan",
         "command-text": "bold blue",
+        "status-left": "bold",
+        "status-right": "dim",
     }
 )
 
@@ -69,8 +71,14 @@ def build_input_style() -> Style:
     return Style.from_dict(rules)
 
 
-def build_key_bindings() -> KeyBindings:
-    """构建输入键位绑定：Shift+Tab 循环切换工作模式（plan→build→auto）。"""
+def build_key_bindings(
+    on_interrupt: Callable[[], bool] | None = None,
+) -> KeyBindings:
+    """构建输入键位绑定。
+
+    - Shift+Tab 循环切换工作模式（plan→build→auto）
+    - Ctrl-C：回调返回 True 时退出输入，否则仅刷新界面（用于“再按一次退出”）
+    """
 
     kb = KeyBindings()
 
@@ -80,6 +88,12 @@ def build_key_bindings() -> KeyBindings:
         current = Config.ACTIVE_MODE
         index = names.index(current) if current in names else -1
         Config.ACTIVE_MODE = names[(index + 1) % len(names)]
+
+    @kb.add("c-c")
+    def _interrupt(event: KeyPressEvent) -> None:
+        if on_interrupt is not None and on_interrupt():
+            event.app.exit(exception=KeyboardInterrupt())
+        event.app.invalidate()
 
     return kb
 

@@ -61,6 +61,298 @@ def test_tool_call_flushes_and_records(monkeypatch):
     assert "ask" in app._messages[-1]["content"]
 
 
+def test_tool_call_display_uses_formatter(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "read", "arguments": '{"file_path": "src/foo.py"}'},
+                )
+            )
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "read(src/foo.py)" in output
+    assert "{" not in output
+    assert "  ⎿ " in output
+
+
+def test_tool_call_line_uses_claude_code_indent_and_dim(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=True, color_system="standard", width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "read", "arguments": '{"file_path": "a.py"}'},
+                )
+            )
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "  ⎿ " in output
+    assert "⎿" in output
+
+
+def test_file_written_renders_content_block(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.FILE_WRITTEN,
+                    {"path": "src/a.py", "content": "x = 1\ny = 2\n"},
+                )
+            )
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "x = 1" in output
+    assert "y = 2" in output
+
+
+def test_file_written_truncates_long_content(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.FILE_WRITTEN,
+                    {"path": "big.py", "content": "\n".join(f"l{i}" for i in range(500))},
+                )
+            )
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "l499" not in output
+    assert "仅预览" in output
+
+
+def test_file_diff_renders_git_style(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    diff = "--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-x\n+y\n"
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(EventTypes.FILE_DIFF, {"path": "src/a.py", "diff": diff})
+            )
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "-x" in output
+    assert "+y" in output
+    assert "+++ b/src/a.py" in output
+
+
+# ---------- ESC 双击中断 ----------
+
+
+def test_cancel_when_busy_calls_client_cancel(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._busy = True
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    fake = FakeClient()
+    monkeypatch.setattr(app, "_client", fake)
+    app._handle(Event(EventTypes.CANCEL))
+    assert fake.cancelled is True
+    assert app._interrupted is True
+
+
+def test_cancel_when_idle_ignored(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._busy = False
+
+    class FakeClient:
+        def cancel(self) -> None:
+            raise AssertionError("空闲时不应取消")
+
+    monkeypatch.setattr(app, "_client", FakeClient())
+    app._handle(Event(EventTypes.CANCEL))
+    assert app._interrupted is False
+
+
+def test_assistant_done_clears_interrupt_flag(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._interrupted = True
+    app._handle(Event(EventTypes.ASSISTANT_DONE))
+    assert app._interrupted is False
+
+
+def test_cancel_watcher_not_started_without_terminal(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    app._console = Console(force_terminal=False)
+    app._start_cancel_watcher()
+    assert app._cancel_watcher is None
+
+
+# ---------- read 工具展示（不显示文件内容） ----------
+
+
+def test_read_result_shows_path_only(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "read", "arguments": '{"file_path": "src/foo.py"}'},
+                )
+            )
+            app._handle(Event(EventTypes.TOOL_RESULT, "def foo():\n    return 1\n"))
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "已读取 src/foo.py" in output
+    assert "def foo()" not in output
+
+
+def test_read_error_result_shows_error(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "read", "arguments": '{"file_path": "nope.py"}'},
+                )
+            )
+            app._handle(Event(EventTypes.TOOL_RESULT, "error: 文件不存在: nope.py"))
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "已读取" not in output
+    assert "文件不存在" in output
+
+
+def test_non_read_result_unchanged(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "shell", "arguments": '{"command": "echo hi"}'},
+                )
+            )
+            app._handle(Event(EventTypes.TOOL_RESULT, "exit code: 0\nstdout:\nhi"))
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "已读取" not in output
+    assert "hi" in output
+
+
+# ---------- grep 展示（只显示成功与否） ----------
+
+
+def test_grep_success_shows_count_only(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "grep", "arguments": '{"pattern": "foo"}'},
+                )
+            )
+            app._handle(Event(EventTypes.TOOL_RESULT, "a.py:1: foo\nb.py:2: foo"))
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "匹配 2 处" in output
+    assert "a.py:1" not in output
+
+
+def test_grep_failure_shows_red_error(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=True, color_system="standard", width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "grep", "arguments": '{"pattern": "["}'},
+                )
+            )
+            app._handle(Event(EventTypes.TOOL_RESULT, "error: 非法正则表达式: ["))
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "非法正则表达式" in output
+    assert "\x1b[1;31m" in output
+
+
+def test_grep_no_match_shows_status(monkeypatch):
+    from rich.console import Console
+
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._handle(
+                Event(
+                    EventTypes.TOOL_CALL,
+                    {"name": "grep", "arguments": '{"pattern": "zzz"}'},
+                )
+            )
+            app._handle(Event(EventTypes.TOOL_RESULT, "无匹配"))
+        output = capture.get()
+    finally:
+        app._console = original
+    assert "无匹配" in output
+
+
 def test_error_sets_flag(monkeypatch):
     app, bus = _make_app(monkeypatch)
     app._handle(Event(EventTypes.ERROR, "boom"))
@@ -570,11 +862,55 @@ def test_prompt_message_has_mode_badge_and_gap(monkeypatch):
     assert message[0] == ("", " ")  # type: ignore[index]
     assert message[1] == ("class:user-mode-plan", "[PLAN]")  # type: ignore[index]
     assert message[2] == ("", " ")  # type: ignore[index]
-    assert message[3] == ("class:user-prompt", "> ")  # type: ignore[index]
-    assert to_plain_text(message) == " [PLAN] > "  # type: ignore[arg-type]
+    assert message[3] == ("class:user-prompt", "❯ ")  # type: ignore[index]
+    assert to_plain_text(message) == " [PLAN] ❯ "  # type: ignore[arg-type]
     rules = dict(captured["style"].style_rules)  # type: ignore[attr-defined]
     assert "user-mode-plan" in rules
     assert "user-mode-auto" in rules
+
+
+def test_bottom_toolbar_shows_mode_and_model(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+    monkeypatch.setattr(Config, "ACTIVE_MODE", "build")
+    toolbar = app._bottom_toolbar()
+    plain = to_plain_text(toolbar)
+    assert "build mode on" in plain
+    assert "·" in plain
+    assert "deepseek" in plain
+
+
+def test_bottom_toolbar_shows_ctrl_c_hint_when_armed(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+    app._exit_armed = True
+    plain = to_plain_text(app._bottom_toolbar())
+    assert "Press Ctrl-C again to exit" in plain
+
+
+def test_bottom_toolbar_shows_unconfigured_hint(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", None)
+    plain = to_plain_text(app._bottom_toolbar())
+    assert "未配置" in plain
+
+
+def test_primary_interrupt_arms_then_exits(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    assert app._primary_interrupt() is False
+    assert app._exit_armed is True
+    assert app._primary_interrupt() is True
+
+
+def test_input_clears_exit_armed(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._exit_armed = True
+    app._handle_input_text("/clear", echo=False)
+    assert app._exit_armed is False
 
 
 # ---------- 子 Agent 滚动回退 ----------

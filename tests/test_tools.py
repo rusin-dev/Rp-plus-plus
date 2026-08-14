@@ -1,6 +1,6 @@
 from src.api.tools import ToolRegistry
 from src.config import Config
-from src.core.event_bus import Event, EventBus
+from src.core.event_bus import Event, EventBus, EventTypes
 
 
 def test_registry_builtin_schemas():
@@ -11,6 +11,7 @@ def test_registry_builtin_schemas():
         "shell",
         "read",
         "write",
+        "edit",
         "grep",
         "web_search",
         "web_fetch",
@@ -35,6 +36,20 @@ def test_execute_shell():
     result = registry.execute("shell", '{"command": "echo rp-test"}', EventBus())
     assert "rp-test" in result
     assert "exit code: 0" in result
+
+
+def test_execute_shell_decodes_utf8_without_crash(monkeypatch):
+    import json
+    import sys as _sys
+
+    registry = ToolRegistry()
+    code = "import sys;sys.stdout.buffer.write(bytes([0xe4,0xbd,0xa0,0xe5,0xa5,0xbd]))"
+    command = f'"{_sys.executable}" -c "{code}"'
+    result = registry.execute("shell", json.dumps({"command": command}), EventBus())
+    assert "error:" not in result
+    assert "stdout:\n" in result
+    assert "None" not in result
+    assert "你好" in result
 
 
 def test_execute_shell_timeout(monkeypatch):
@@ -167,6 +182,93 @@ def test_execute_write_offset_replace(monkeypatch, tmp_path):
     )
     assert "已写入" in result
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "a\nB1\nB2\nc\nd\n"
+
+
+def test_execute_write_publishes_file_written(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    bus = EventBus()
+    registry = ToolRegistry()
+    registry.execute("write", '{"file_path": "new.py", "content": "x = 1\\n"}', bus)
+    event = bus.await_event(EventTypes.FILE_WRITTEN, timeout=1)
+    assert event.data["path"].endswith("new.py")
+    assert event.data["content"] == "x = 1\n"
+
+
+# ---------- edit 工具 ----------
+
+
+def test_execute_edit_requires_read_first(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    (tmp_path / "a.py").write_text("old = 1\n", encoding="utf-8")
+    registry = ToolRegistry()
+    result = registry.execute(
+        "edit",
+        '{"file_path": "a.py", "old_string": "old = 1", "new_string": "new = 2"}',
+        EventBus(),
+    )
+    assert "error:" in result
+    assert "read" in result
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "old = 1\n"
+
+
+def test_execute_edit_replaces_first_occurrence(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    (tmp_path / "a.py").write_text("x = 1\nx = 2\n", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.execute("read", '{"file_path": "a.py"}', EventBus())
+    result = registry.execute(
+        "edit",
+        '{"file_path": "a.py", "old_string": "x = ", "new_string": "y = "}',
+        EventBus(),
+    )
+    assert "已编辑" in result
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "y = 1\nx = 2\n"
+
+
+def test_execute_edit_not_found(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    (tmp_path / "a.py").write_text("hello\n", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.execute("read", '{"file_path": "a.py"}', EventBus())
+    result = registry.execute(
+        "edit",
+        '{"file_path": "a.py", "old_string": "nope", "new_string": "x"}',
+        EventBus(),
+    )
+    assert "error:" in result
+    assert "未找到" in result
+
+
+def test_execute_edit_publishes_file_diff(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    (tmp_path / "a.py").write_text("old = 1\n", encoding="utf-8")
+    bus = EventBus()
+    registry = ToolRegistry()
+    registry.execute("read", '{"file_path": "a.py"}', EventBus())
+    registry.execute(
+        "edit",
+        '{"file_path": "a.py", "old_string": "old", "new_string": "new"}',
+        bus,
+    )
+    event = bus.await_event(EventTypes.FILE_DIFF, timeout=1)
+    diff = event.data["diff"]
+    assert event.data["path"].endswith("a.py")
+    assert "--- a/" in diff and "+++ b/" in diff
+    assert "-old = 1" in diff and "+new = 1" in diff
+
+
+def test_execute_edit_empty_old_string(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.execute("read", '{"file_path": "a.py"}', EventBus())
+    result = registry.execute(
+        "edit",
+        '{"file_path": "a.py", "old_string": "", "new_string": "y"}',
+        EventBus(),
+    )
+    assert "error:" in result
+    assert "old_string" in result
 
 
 def test_execute_grep(monkeypatch, tmp_path):

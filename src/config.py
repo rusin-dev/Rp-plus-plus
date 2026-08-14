@@ -9,7 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_FROZEN = bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+_FROZEN = (
+    bool(getattr(sys, "frozen", False))
+    or "__compiled__" in globals()
+    or hasattr(sys, "_MEIPASS")
+)
 
 
 def _resolve_root() -> Path:
@@ -19,12 +23,26 @@ def _resolve_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _bundle_base() -> Path:
+    """打包运行时的资源根目录：PyInstaller 用 _MEIPASS，Nuitka 用可执行文件所在目录。"""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass)
+    return Path(sys.executable).parent
+
+
 def _resolve_data_dir() -> Path:
-    """提示词数据目录；打包运行时读取捆绑进可执行程序的 src/data。"""
+    """提示词数据目录；打包运行时读取捆绑进可执行程序的数据。"""
     if _FROZEN:
-        bundle = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-        return bundle / "src" / "data"
-    return _resolve_root() / "src" / "data"
+        return _bundle_base() / "src" / "data"
+
+    source = _resolve_root() / "src" / "data"
+    if source.is_dir():
+        return source
+    nearby = Path(sys.executable).parent / "src" / "data"
+    if nearby.is_dir():
+        return nearby
+    return source
 
 
 def _get_int(name: str, default: int) -> int:
@@ -115,7 +133,7 @@ class Config:
     }
     # 各模式下禁用的工具名（防御性限制，plan 模式不允许任何改动）
     MODE_TOOL_EXCLUSIONS: dict[str, set[str]] = {
-        "plan": {"shell", "write"},
+        "plan": {"shell", "write", "edit"},
     }
 
     # 常见模型的上下文窗口（tokens）；未收录的模型用默认值

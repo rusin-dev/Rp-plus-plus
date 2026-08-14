@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import html
 import json
 import re
@@ -62,6 +63,8 @@ def _run_shell(bus: EventBus, command: str) -> str:
             shell=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_SHELL_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
@@ -146,6 +149,9 @@ def _write_file(
         target.write_text(new_text, encoding="utf-8")
         if state is not None:
             state.add(str(target))
+        bus.publish(
+            Event(EventTypes.FILE_WRITTEN, {"path": str(target), "content": new_text})
+        )
         return (
             f"已写入 {target}（区间替换第 {start}~{end} 行，"
             f"共 {len(new_text.encode('utf-8'))} 字节）"
@@ -156,7 +162,56 @@ def _write_file(
     target.write_text(content, encoding="utf-8")
     if state is not None:
         state.add(str(target))
+    bus.publish(
+        Event(EventTypes.FILE_WRITTEN, {"path": str(target), "content": content})
+    )
     return f"已写入 {target}（{len(content.encode('utf-8'))} 字节）"
+
+
+def _edit_file(
+    bus: EventBus,
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    state: set[str] | None = None,
+) -> str:
+    """在已存在的文件中精确替换文本（old_string → new_string）。
+
+    必须先 read 才能 edit；只替换第一处匹配，修改结果以 git 风格 diff 展示。
+    """
+    try:
+        target = _resolve_workspace_path(file_path)
+    except ValueError as exc:
+        return f"error: {exc}"
+    if not target.is_file():
+        return f"error: 文件不存在: {target}"
+    if state is not None and str(target) not in state:
+        return f"error: 编辑 {target.name} 前必须先 read 该文件"
+    original = target.read_text(encoding="utf-8", errors="replace")
+    if not old_string:
+        return "error: old_string 不能为空"
+    if old_string not in original:
+        return f"error: 在 {target.name} 中未找到要替换的文本"
+    new_text = original.replace(old_string, new_string, 1)
+    target.write_text(new_text, encoding="utf-8")
+    if state is not None:
+        state.add(str(target))
+    diff = _make_unified_diff(str(target), original, new_text)
+    if diff:
+        bus.publish(Event(EventTypes.FILE_DIFF, {"path": str(target), "diff": diff}))
+    return f"已编辑 {target}（替换 1 处，共 {len(new_text.encode('utf-8'))} 字节）"
+
+
+def _make_unified_diff(path: str, old_text: str, new_text: str) -> str:
+    """生成 git 风格 unified diff 文本（--- / +++ / @@ / - / +）。"""
+    diff = difflib.unified_diff(
+        old_text.splitlines(),
+        new_text.splitlines(),
+        fromfile=f"a/{path}",
+        tofile=f"b/{path}",
+        lineterm="",
+    )
+    return "\n".join(diff)
 
 
 def _grep(
@@ -463,6 +518,36 @@ WRITE_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
     },
 }
 
+EDIT_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
+    "type": "function",
+    "function": {
+        "name": "edit",
+        "description": (
+            "对已存在的文件做精确替换：把 old_string 替换成 new_string。"
+            "必须先 read 过该文件；只替换第一处匹配。修改会以 git 风格 diff 展示。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "文件路径，绝对路径或相对工作区根目录的路径",
+                },
+                "old_string": {
+                    "type": "string",
+                    "description": "要替换的原始文本，必须与文件内容完全一致",
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": "替换后的新文本",
+                },
+            },
+            "required": ["file_path", "old_string", "new_string"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 GREP_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
     "type": "function",
     "function": {
@@ -570,6 +655,7 @@ _TOOL_HANDLERS: dict[str, Callable[..., str]] = {
     "shell": _run_shell,
     "read": _read_file,
     "write": _write_file,
+    "edit": _edit_file,
     "grep": _grep,
     "web_search": _web_search,
     "web_fetch": _web_fetch,
@@ -589,6 +675,7 @@ class ToolRegistry:
             SHELL_TOOL_SCHEMA,
             READ_TOOL_SCHEMA,
             WRITE_TOOL_SCHEMA,
+            EDIT_TOOL_SCHEMA,
             GREP_TOOL_SCHEMA,
             WEB_SEARCH_TOOL_SCHEMA,
             WEB_FETCH_TOOL_SCHEMA,
@@ -640,7 +727,7 @@ class ToolRegistry:
             return f"error: 工具 {name} 的参数不是合法 JSON"
 
         try:
-            if name in {"read", "write"}:
+            if name in {"read", "write", "edit"}:
                 return handler(bus, state=self._read_files, **params)
             return handler(bus, **params)
         except Exception as exc:

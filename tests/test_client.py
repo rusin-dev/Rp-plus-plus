@@ -1,3 +1,4 @@
+import threading
 from types import SimpleNamespace
 
 from openai.types.chat import (
@@ -280,3 +281,75 @@ def test_stream_completion_main_events_unchanged(monkeypatch):
     assert types == [EventTypes.TOOL_CALL, EventTypes.TOOL_RESULT]
     assert events[0].data == {"name": "read", "arguments": '{"file_path": "a.py"}'}
     assert events[1].data == "ok"
+
+
+# ---------- 中断（ESC 双击） ----------
+
+
+def test_cancel_method_sets_flag(monkeypatch):
+    client = _client(monkeypatch, EventBus())
+    assert client._cancel.is_set() is False
+    client.cancel()
+    assert client._cancel.is_set() is True
+
+
+def test_cancel_preset_skips_request(monkeypatch):
+    bus = EventBus()
+    client = _client(monkeypatch, bus)
+    cancel = threading.Event()
+    cancel.set()
+
+    def boom(**kwargs):
+        raise AssertionError("已取消时不应发起请求")
+
+    monkeypatch.setattr(client._client.chat.completions, "create", boom)
+    made, text = stream_completion(
+        Config, bus, client._client, client._tools, [], "auto", cancel_event=cancel
+    )
+    assert made is False
+    assert text == ""
+
+
+def test_cancel_during_stream_stops_and_done(monkeypatch):
+    bus = EventBus()
+    client = _client(monkeypatch, bus)
+    cancel = threading.Event()
+
+    def stream():
+        yield _chunk("第一段")
+        cancel.set()
+        yield _chunk("第二段")
+
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
+    made, text = stream_completion(
+        Config, bus, client._client, client._tools, [], "auto", cancel_event=cancel
+    )
+    assert made is False
+    assert text == "第一段"
+    events = bus.drain()
+    assert [e.type for e in events] == [EventTypes.TOKEN]
+    assert events[0].data == "第一段"
+
+
+def test_run_breaks_loop_when_cancelled(monkeypatch):
+    bus = EventBus()
+    client = _client(monkeypatch, bus)
+    rounds = {"n": 0}
+
+    def stream():
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            yield _chunk("a")
+            yield _tool_chunk(0, "call_1", "shell", '{"command": "echo x"}')
+        else:
+            client.cancel()
+            yield _chunk("b")
+
+    monkeypatch.setattr(client._client.chat.completions, "create", lambda **kwargs: stream())
+    client._run("任务", "system", [])
+    events = bus.drain()
+    types = [e.type for e in events]
+    assert EventTypes.TOOL_CALL in types
+    assert events[-1].type == EventTypes.ASSISTANT_DONE
+    tokens = [e.data for e in events if e.type == EventTypes.TOKEN]
+    assert "b" not in tokens

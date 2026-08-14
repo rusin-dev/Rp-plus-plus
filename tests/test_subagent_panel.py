@@ -93,3 +93,63 @@ def test_panel_truncates_tool_result():
     joined = "\n".join(panel._lines)
     assert len(joined) < 500
     assert "…" in joined
+
+
+def test_panel_appends_written_content():
+    panel = _panel()
+    panel.handle_event(
+        Event(
+            EventTypes.FILE_WRITTEN,
+            {"path": "src/a.py", "content": "x = 1\ny = 2\n"},
+        )
+    )
+    joined = "\n".join(panel._lines)
+    assert "src/a.py" in joined
+    assert "x = 1" in joined
+    assert "y = 2" in joined
+
+
+def test_panel_appends_diff():
+    panel = _panel()
+    panel.handle_event(
+        Event(
+            EventTypes.FILE_DIFF,
+            {"path": "src/a.py", "diff": "--- a/src/a.py\n+++ b/src/a.py\n-x\n+y\n"},
+        )
+    )
+    joined = "\n".join(panel._lines)
+    assert "编辑了：src/a.py" in joined
+    assert "-x" in joined
+    assert "+y" in joined
+
+
+def test_panel_formats_tool_call():
+    panel = _panel()
+    panel.handle_event(
+        Event(
+            EventTypes.SUBAGENT_TOOL_CALL,
+            {"agent_id": "librarian", "name": "grep", "arguments": '{"pattern": "foo"}'},
+        )
+    )
+    joined = "\n".join(panel._lines)
+    assert "grep(foo)" in joined
+    assert "{" not in joined
+
+
+def test_panel_read_result_shows_path_only():
+    panel = _panel()
+    panel.handle_event(
+        Event(
+            EventTypes.SUBAGENT_TOOL_CALL,
+            {"agent_id": "librarian", "name": "read", "arguments": '{"file_path": "a.py"}'},
+        )
+    )
+    panel.handle_event(
+        Event(
+            EventTypes.SUBAGENT_TOOL_RESULT,
+            {"agent_id": "librarian", "result": "line1\nline2"},
+        )
+    )
+    joined = "\n".join(panel._lines)
+    assert "已读取 a.py" in joined
+    assert "line1" not in joined

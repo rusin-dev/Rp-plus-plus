@@ -24,6 +24,8 @@ from ..config import Config
 from ..core.event_bus import Event, EventBus, EventTypes
 from ..core.logger import get_logger
 from ..core.session import Session, SessionStore
+from .cancel_watcher import EscCancelWatcher
+from .formatters import extract_read_path, format_grep_status, format_tool_call
 from .input import (
     COMMAND_COMPLETE_STYLE,
     COMMAND_DESCRIPTIONS,
@@ -49,6 +51,7 @@ _OK_STYLE = "green"
 _TOOL_RESULT_SUMMARY_LEN = 200
 _DEFAULT_COMPACT_KEEP = 20
 _LIVE_REFRESH_INTERVAL = 0.05
+_WRITE_PREVIEW_LINES = 200
 
 
 class ChatApp:
@@ -93,14 +96,27 @@ class ChatApp:
         self._subagent_mode = "idle"
         self._subagent_agent: str | None = None
         self._subagent_buffer = ""
+        self._cancel_watcher: EscCancelWatcher | None = None
+        self._interrupted = False
+        self._pending_read_path: str | None = None
+        self._pending_subagent_read: str | None = None
+        self._last_tool_name: str | None = None
+        self._last_subagent_tool: str | None = None
+        self._exit_armed = False
 
     # ---------- 主循环 ----------
 
     def _show_mascot(self) -> None:
-        """启动时打印吉祥物与欢迎语。"""
+        """启动时打印欢迎面板与分隔线（类 Claude Code 的欢迎框）。"""
         from .mascot import print_mascot
 
-        print_mascot(self._console)
+        print_mascot(
+            self._console,
+            model=self._config.active_model(),
+            provider=self._config.ACTIVE_PROVIDER or "",
+            cwd=str(self._config.ROOT_DIR),
+        )
+        self._console.rule(style="dim")
 
     def run(self) -> int:
         try:
@@ -117,6 +133,7 @@ class ChatApp:
         except KeyboardInterrupt:
             self._shutdown = True
         finally:
+            self._stop_cancel_watcher()
             self._save_session()
             self._console.print()
         return 0
@@ -218,17 +235,41 @@ class ChatApp:
             name = event.data["name"]
             args = event.data.get("arguments", "")
             self._messages.append({"role": "tool", "content": f"调用工具 {name}({args})"})
-            self._console.print(f"⎿ {name}({args})", style=_TOOL_STYLE)
+            self._last_tool_name = name
+            self._pending_read_path = extract_read_path(args) if name == "read" else None
+            self._print_tool_line(format_tool_call(name, args))
+        elif event_type == EventTypes.FILE_WRITTEN:
+            self._print_file_written(event.data or {})
+        elif event_type == EventTypes.FILE_DIFF:
+            self._print_file_diff(event.data or {})
+        elif event_type == EventTypes.CANCEL:
+            self._handle_cancel()
         elif event_type == EventTypes.TOOL_RESULT:
-            summary = " ".join(str(event.data).split())[:_TOOL_RESULT_SUMMARY_LEN]
-            suffix = "…" if len(summary) >= _TOOL_RESULT_SUMMARY_LEN else ""
-            self._console.print(f"  → {summary}{suffix}", style=_DIM_STYLE)
+            last_tool = self._last_tool_name
+            self._last_tool_name = None
+            pending = self._pending_read_path
+            self._pending_read_path = None
+            raw = str(event.data)
+            if pending is not None and not raw.startswith("error:"):
+                self._console.print(f"  → 已读取 {pending}", style=_DIM_STYLE)
+            elif last_tool == "grep":
+                status = format_grep_status(raw)
+                style = _ERROR_STYLE if raw.startswith("error:") else _DIM_STYLE
+                self._console.print(f"  → {status}", style=style)
+            else:
+                summary = " ".join(raw.split())[:_TOOL_RESULT_SUMMARY_LEN]
+                suffix = "…" if len(summary) >= _TOOL_RESULT_SUMMARY_LEN else ""
+                self._console.print(f"  → {summary}{suffix}", style=_DIM_STYLE)
         elif event_type == EventTypes.ASSISTANT_DONE:
             self._close_reply_stream()
             self._flush_current()
             self._busy = False
             self._reply_open = False
             self._console.print()
+            if self._interrupted:
+                self._interrupted = False
+                self._console.print("⏹ 回答已中断", style=_DIM_STYLE)
+            self._stop_cancel_watcher()
             self._save_session()
             if self._single_shot:
                 self._shutdown = True
@@ -237,6 +278,8 @@ class ChatApp:
             self._flush_current()
             self._busy = False
             self._reply_open = False
+            self._interrupted = False
+            self._stop_cancel_watcher()
             self._error = event.data
             self._console.print(f"✖ {event.data}", style=_ERROR_STYLE)
             self._save_session()
@@ -261,6 +304,32 @@ class ChatApp:
         elif event_type == EventTypes.SHUTDOWN:
             self._shutdown = True
 
+    def _print_tool_line(self, text: str, indent: int = 2) -> None:
+        """渲染 `⎿` 状态行（类 Claude Code：缩进 + 亮图标 + 灰文本）。"""
+        line = Text()
+        line.append(" " * indent + "⎿ ", style="bold")
+        line.append(text, style=_DIM_STYLE)
+        self._console.print(line)
+
+    def _print_file_written(self, data: dict) -> None:
+        """把 write 工具写入的内容以 Markdown 代码框展示（超长时截断预览）。"""
+        content = str(data.get("content", ""))
+        if not content:
+            return
+        lines = content.splitlines()
+        truncated = len(lines) > _WRITE_PREVIEW_LINES
+        preview = "\n".join(lines[:_WRITE_PREVIEW_LINES])
+        if truncated:
+            preview += f"\n…（共 {len(lines)} 行，仅预览前 {_WRITE_PREVIEW_LINES} 行）"
+        self._console.print(Markdown("```text\n" + preview + "\n```"))
+
+    def _print_file_diff(self, data: dict) -> None:
+        """把 edit 工具的修改以 git 风格 diff 的 Markdown 代码框展示。"""
+        diff = str(data.get("diff", ""))
+        if not diff:
+            return
+        self._console.print(Markdown("```diff\n" + diff + "\n```"))
+
     # ---------- 交互 ----------
 
     def _read_input(self) -> None:
@@ -275,10 +344,12 @@ class ChatApp:
             text = session.prompt(
                 message=self._prompt_message,
                 style=build_input_style(),
+                bottom_toolbar=self._bottom_toolbar,
             )
         except (EOFError, KeyboardInterrupt):
             self._shutdown = True
             return
+        self._exit_armed = False
         self._handle_input_text(text, echo=False)
 
     def _prompt_message(self) -> AnyFormattedText:
@@ -288,8 +359,32 @@ class ChatApp:
             ("", " "),
             (f"class:user-mode-{mode}", mode_label(mode)),
             ("", " "),
-            ("class:user-prompt", "> "),
+            ("class:user-prompt", "❯ "),
         ]
+
+    def _bottom_toolbar(self) -> AnyFormattedText:
+        """底部状态栏（类 Claude Code）：左侧模式/Ctrl-C 提示，右侧模型/供应商。"""
+        if self._exit_armed:
+            left = "Press Ctrl-C again to exit"
+        else:
+            left = f"⏸ {self._config.ACTIVE_MODE} mode on · /help 查看快捷键"
+        provider = self._config.ACTIVE_PROVIDER
+        if provider:
+            right = f"{self._config.active_model()} · {provider}"
+        else:
+            right = "未配置 · 运行 /connect"
+        return [
+            ("class:status-left", left),
+            ("", "    "),
+            ("class:status-right", right),
+        ]
+
+    def _primary_interrupt(self) -> bool:
+        """处理 Ctrl-C：第一次进入待退出状态，第二次返回 True 表示退出。"""
+        if self._exit_armed:
+            return True
+        self._exit_armed = True
+        return False
 
     def _ensure_input(self) -> PromptSession[str] | None:
         """惰性创建 prompt_toolkit 会话；无控制台时回退。"""
@@ -301,7 +396,7 @@ class ChatApp:
                     completer=SlashCommandCompleter(),
                     complete_while_typing=True,
                     complete_style=COMMAND_COMPLETE_STYLE,
-                    key_bindings=build_key_bindings(),
+                    key_bindings=build_key_bindings(on_interrupt=self._primary_interrupt),
                     lexer=SlashCommandLexer(),
                 )
             except Exception:
@@ -314,7 +409,7 @@ class ChatApp:
         """stdin 非 TTY（如管道）时的回退输入。"""
         self._print_mode_badge()
         self._console.print(" ", end="")
-        self._console.print("> ", style=_USER_STYLE, end="")
+        self._console.print("❯ ", style=_USER_STYLE, end="")
         try:
             raw = sys.stdin.readline()
         except (EOFError, KeyboardInterrupt):
@@ -332,6 +427,7 @@ class ChatApp:
         self._console.print(mode_label(mode), style=style, end="")
 
     def _handle_input_text(self, raw: str, echo: bool) -> None:
+        self._exit_armed = False
         text = raw.strip()
         if not text:
             return
@@ -622,10 +718,12 @@ class ChatApp:
 
                 panel = SubAgentPanel(self._config, self._bus, agent_id, task)
                 self._subagent_mode = "panel"
+                self._stop_cancel_watcher()
                 try:
                     result = panel.run()
                 finally:
                     self._subagent_mode = "idle"
+                self._start_cancel_watcher()
                 self._record_subagent_result(agent_id, result)
                 if result:
                     self._console.print()
@@ -652,12 +750,26 @@ class ChatApp:
             return
         name = data.get("name", "?")
         arguments = data.get("arguments", "")
-        self._console.print(f"    ⎿ {name}({arguments})", style=_TOOL_STYLE)
+        self._last_subagent_tool = name
+        self._pending_subagent_read = extract_read_path(arguments) if name == "read" else None
+        self._print_tool_line(format_tool_call(name, arguments), indent=4)
 
     def _handle_subagent_tool_result(self, data: dict) -> None:
         if self._subagent_mode != "scroll":
             return
         result = str(data.get("result", ""))
+        last_tool = self._last_subagent_tool
+        self._last_subagent_tool = None
+        pending = self._pending_subagent_read
+        self._pending_subagent_read = None
+        if pending is not None and not result.startswith("error:"):
+            self._console.print(f"      → 已读取 {pending}", style=_DIM_STYLE)
+            return
+        if last_tool == "grep":
+            status = format_grep_status(result)
+            style = _ERROR_STYLE if result.startswith("error:") else _DIM_STYLE
+            self._console.print(f"      → {status}", style=style)
+            return
         summary = " ".join(result.split())[:_TOOL_RESULT_SUMMARY_LEN]
         suffix = "…" if len(summary) >= _TOOL_RESULT_SUMMARY_LEN else ""
         self._console.print(f"      → {summary}{suffix}", style=_DIM_STYLE)
@@ -699,7 +811,7 @@ class ChatApp:
 
     def _ask(self, question: str) -> None:
         self._console.print(f"? {question}", style=_TOOL_STYLE)
-        self._console.print("> ", style=_TOOL_STYLE, end="")
+        self._console.print("❯ ", style=_TOOL_STYLE, end="")
         try:
             raw = sys.stdin.readline()
         except (EOFError, KeyboardInterrupt):
@@ -709,11 +821,37 @@ class ChatApp:
     def _submit(self, user_message: str, echo: bool = True) -> None:
         assert self._client is not None, "ChatApp 需要有效的 ChatClient"
         if echo:
-            self._console.print(f"> {user_message}", style=_USER_STYLE)
+            self._console.print(f"❯ {user_message}", style=_USER_STYLE)
         self._messages.append({"role": "user", "content": user_message})
         self._error = None
+        self._interrupted = False
         self._busy = True
+        self._start_cancel_watcher()
         self._client.submit(user_message, self._system_prompt, self._history_params())
+
+    # ---------- ESC 双击中断 ----------
+
+    def _start_cancel_watcher(self) -> None:
+        if self._cancel_watcher is not None and self._cancel_watcher.is_alive():
+            return
+        if not (self._console.is_terminal and sys.stdin.isatty()):
+            return
+        watcher = EscCancelWatcher(self._bus)
+        self._cancel_watcher = watcher
+        watcher.start()
+
+    def _stop_cancel_watcher(self) -> None:
+        watcher = self._cancel_watcher
+        if watcher is not None:
+            watcher.stop()
+            self._cancel_watcher = None
+
+    def _handle_cancel(self) -> None:
+        if not self._busy:
+            return
+        self._interrupted = True
+        if self._client is not None:
+            self._client.cancel()
 
     def _history_params(self) -> list[ChatCompletionMessageParam]:
         history: list[ChatCompletionMessageParam] = []

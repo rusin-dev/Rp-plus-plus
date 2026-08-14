@@ -13,6 +13,7 @@ Nuitka 不跨平台，各平台需在对应系统上编译（产物在 dist 目�
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,8 @@ LAUNCHER = ROOT / "scripts" / "launcher.py"
 def build_args() -> list[str]:
     """构造 Nuitka 参数（可单测）。"""
     data_dir = ROOT / "src" / "data"
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f"提示词数据目录不存在: {data_dir}")
     return [
         "--onefile",
         "--standalone",
@@ -40,6 +43,22 @@ def build_args() -> list[str]:
 
 def _command() -> list[str]:
     return [sys.executable, "-m", "nuitka", *build_args()]
+
+
+def _build_env() -> dict[str, str]:
+    """Nuitka 编译环境：把项目根目录加入模块搜索路径，确保 src 包被编译进产物。
+
+    Nuitka 只搜索「主脚本目录 + 当前工作目录 + sys.path」，而主脚本位于
+    scripts/ 下，若在其它目录执行构建，src 包将无法被找到、不会被编译进去，
+    运行时会报 ModuleNotFoundError: No module named 'src.main'。
+    """
+    env = dict(os.environ)
+    pythonpath = str(ROOT)
+    existing = env.get("PYTHONPATH")
+    if existing:
+        pythonpath = f"{pythonpath}{os.pathsep}{existing}"
+    env["PYTHONPATH"] = pythonpath
+    return env
 
 
 def _ensure_nuitka() -> None:
@@ -66,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     _ensure_nuitka()
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, cwd=ROOT, env=_build_env())
     exe = ROOT / "dist" / _binary_name()
     if exe.is_file():
         size_mb = exe.stat().st_size / 1024 / 1024

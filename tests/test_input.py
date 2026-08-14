@@ -99,3 +99,52 @@ def test_shift_tab_cycles_mode(monkeypatch):
     assert Config.ACTIVE_MODE == "build"
     s_tab.handler(event)  # type: ignore[arg-type]
     assert Config.ACTIVE_MODE == "auto"
+
+
+def test_ctrl_c_binding_arms_then_exits():
+    from types import SimpleNamespace
+
+    from src.ui.input import build_key_bindings
+
+    state = {"armed": False}
+
+    def on_interrupt() -> bool:
+        if state["armed"]:
+            return True
+        state["armed"] = True
+        return False
+
+    kb = build_key_bindings(on_interrupt=on_interrupt)
+    ctrl_c = next(b for b in kb.bindings if "c-c" in b.keys)
+
+    class _FakeApp:
+        def __init__(self) -> None:
+            self.exited: list[object] = []
+
+        def invalidate(self) -> None:
+            pass
+
+        def exit(self, exception=None) -> None:  # type: ignore[no-untyped-def]
+            self.exited.append(exception)
+
+    app = _FakeApp()
+    event = SimpleNamespace(app=app)
+
+    ctrl_c.handler(event)  # type: ignore[arg-type]
+    assert state["armed"] is True
+    assert app.exited == []
+
+    ctrl_c.handler(event)  # type: ignore[arg-type]
+    assert len(app.exited) == 1
+    assert isinstance(app.exited[0], KeyboardInterrupt)
+
+
+def test_ctrl_c_binding_without_callback_does_not_exit():
+    from types import SimpleNamespace
+
+    from src.ui.input import build_key_bindings
+
+    kb = build_key_bindings()
+    ctrl_c = next(b for b in kb.bindings if "c-c" in b.keys)
+    event = SimpleNamespace(app=SimpleNamespace(invalidate=lambda: None, exit=lambda exception=None: None))
+    ctrl_c.handler(event)  # type: ignore[arg-type]
