@@ -1,7 +1,7 @@
 import io
 from typing import Any
 
-from src.config import Config
+from src.config import Config, Provider
 from src.core.event_bus import Event, EventBus, EventTypes
 from src.ui.app import ChatApp
 
@@ -11,6 +11,19 @@ def _make_app(monkeypatch) -> tuple[ChatApp, EventBus]:
     bus = EventBus()
     app = ChatApp(Config, bus, None, "system prompt")
     return app, bus
+
+
+def _use_provider(monkeypatch, name="test", api_key="k", api_url="https://api.example.com/v1"):
+    provider = Provider(
+        name=name,
+        api_key=api_key,
+        api_url=api_url,
+        models=["m"],
+        default_model="m",
+    )
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", name)
+    monkeypatch.setattr(Config, "providers", lambda: {name: provider})
+    return provider
 
 
 def test_token_appends_to_current(monkeypatch):
@@ -611,7 +624,7 @@ def test_command_connect_opens_picker_in_terminal(monkeypatch, tmp_path):
     assert app._command_display is None
     names = [name for name, _ in app._picker_items]
     assert "deepseek" in names
-    assert "预设模板" in app._picker_items[0][1]
+    assert app._picker_items[0][1] == "deepseek"
 
 
 def test_command_connect_picker_moves_and_confirms(monkeypatch, tmp_path):
@@ -674,7 +687,7 @@ def test_finish_connect_api_key_blank_rejected(monkeypatch, tmp_path):
     assert Config.ACTIVE_PROVIDER is None
 
 
-def test_connect_display_includes_presets_and_configured(monkeypatch, tmp_path):
+def test_connect_display_shows_provider_names_only(monkeypatch, tmp_path):
     _setup_preset(tmp_path, monkeypatch, name="openai", api_url="https://api.openai.com/v1")
     _setup_providers(
         tmp_path,
@@ -687,8 +700,8 @@ def test_connect_display_includes_presets_and_configured(monkeypatch, tmp_path):
     text = " ".join(part for _, part in app._command_display[1])
     assert "deepseek" in text
     assert "openai" in text
-    assert "已配置" in text
-    assert "预设模板" in text
+    assert "已配置" not in text
+    assert "预设模板" not in text
 
 
 def test_command_compact_truncates(monkeypatch, tmp_path):
@@ -781,6 +794,7 @@ def test_command_display_cleared_before_new_command(monkeypatch):
 
 def test_command_display_cleared_on_new_message(monkeypatch):
     app, bus = _make_app(monkeypatch)
+    _use_provider(monkeypatch)
     app._command_display = ("可用命令", [("", "x")])
     client = _FakeClient()
     app._client = client  # type: ignore[assignment]
@@ -921,6 +935,7 @@ class _FakeClient:
 
 def test_handle_input_text_submits_message(monkeypatch):
     app, bus = _make_app(monkeypatch)
+    _use_provider(monkeypatch)
     client = _FakeClient()
     app._client = client  # type: ignore[assignment]
     app._handle_input_text(" 你好 ", echo=False)

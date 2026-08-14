@@ -421,8 +421,11 @@ class ChatApp:
         fragments.append(("", "\n"))
         for index, (_name, label) in enumerate(self._picker_items):
             marker = "▸" if index == self._picker_index else " "
-            style = "class:picker-selected" if index == self._picker_index else ""
-            fragments.append((style, f"  {marker} {label}"))
+            text = f"  {marker} {label}"
+            if index == self._picker_index:
+                fragments.append(("class:picker-selected", text.ljust(width)))
+            else:
+                fragments.append(("", text))
             fragments.append(("", "\n"))
         fragments.append(("class:picker-hint", "  ↑ ↓ 切换 · Enter 确认 · Esc 取消"))
         fragments.append(("", "\n"))
@@ -596,14 +599,7 @@ class ChatApp:
         for name in sorted(providers) + sorted(presets):
             if any(name == existing for existing, _ in items):
                 continue
-            provider = providers.get(name) or presets.get(name)
-            assert provider is not None
-            configured = name in providers
-            label = (
-                f"{name}  -  {provider.api_url}"
-                f"（{'已配置' if configured else '预设模板'}）"
-            )
-            items.append((name, label))
+            items.append((name, name))
             if name == self._config.ACTIVE_PROVIDER:
                 index = len(items) - 1
         if not self._console.is_terminal:
@@ -966,8 +962,24 @@ class ChatApp:
             raw = ""
         self._bus.publish(Event(EventTypes.USER_ANSWER, raw.strip()))
 
+    def _provider_problem(self) -> str | None:
+        """返回阻止对话的配置问题描述；无问题返回 None。"""
+        if self._config.active_provider() is None:
+            return "未配置任何 API provider，请先运行 /connect 选择预设并输入 API Key"
+        try:
+            self._config.validate()
+        except ValueError as exc:
+            return str(exc)
+        return None
+
     def _submit(self, user_message: str, echo: bool = True) -> None:
         assert self._client is not None, "ChatApp 需要有效的 ChatClient"
+        problem = self._provider_problem()
+        if problem:
+            self._console.print(f"✖ {problem}", style=_ERROR_STYLE)
+            if self._single_shot:
+                self._shutdown = True
+            return
         self._command_display = None
         if echo:
             self._console.print(f"❯ {user_message}", style=_USER_STYLE)
