@@ -12,6 +12,7 @@ jobs:
   merge:
     name: Merge dev into master
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,17 +23,34 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check dev ahead of master
+        id: check
+        run: |
+          should_merge=true
+          if ! git rev-parse --verify origin/dev >/dev/null 2>&1; then
+            echo "未找到 origin/dev 分支，跳过合并。"
+            should_merge=false
+          elif [ "$(git rev-list --count origin/master..origin/dev)" -eq 0 ]; then
+            echo "dev 无新提交，无需合并。"
+            should_merge=false
+          fi
+          echo "should_merge=$should_merge" >> "$GITHUB_OUTPUT"
+
       - name: Merge dev
+        if: steps.check.outputs.should_merge == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git merge --no-ff origin/dev -m "merge: 每日自动合并 dev 到 master"
 
       - name: Install dependencies
+        if: steps.check.outputs.should_merge == 'true'
         run: pip install -r requirements-dev.txt
 
       - name: Test
+        if: steps.check.outputs.should_merge == 'true'
         run: pytest
 
       - name: Push to master
+        if: steps.check.outputs.should_merge == 'true'
         run: git push origin master

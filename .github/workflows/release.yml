@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    name: Lint & Test
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +28,8 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     needs: test
+    if: ${{ !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -70,6 +72,7 @@ jobs:
   release:
     name: Create Release
     needs: build
+    if: ${{ !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -78,7 +81,23 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
+
+  release-preview:
+    name: Create Pre-release (source only)
+    needs: test
+    if: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          body: "Alpha/Beta 预发布：仅源码快照，不含二进制构建产物。"

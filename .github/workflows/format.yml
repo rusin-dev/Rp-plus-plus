@@ -7,10 +7,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   format:
     name: ruff format & fix
     runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.fork == false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,3 +44,25 @@ jobs:
           fi
           git commit -m "style: 自动应用 ruff format 与排版修复"
           git push origin HEAD:${{ github.head_ref }}
+
+  format-check:
+    name: Format check (fork)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.fork == true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install "ruff>=0.16"
+
+      - name: Check formatting
+        run: |
+          echo "::error title=需要手动格式化::来自 fork 的 PR 无法由机器人自动推送格式化，请本地运行：pip install ruff && ruff format . && ruff check --fix . 后重新提交。"
+          ruff format --check .
+          ruff check .
