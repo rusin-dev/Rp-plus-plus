@@ -1,9 +1,11 @@
 {
-    "name": "minimax",
+    "name": "MiniMax Token Plan (minimax.com)",
     "api_url": "https://api.minimaxi.com/v1",
     "models": [
         "minimax-m3",
-        "minimax-m2.7"
+        "minimax-m2.7",
+        "minimax-m2.5",
+        "minimax-m2.1"
     ],
     "default_model": "minimax-m3"
 }
