@@ -7,20 +7,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 _FROZEN = (
     bool(getattr(sys, "frozen", False))
     or "__compiled__" in globals()
     or hasattr(sys, "_MEIPASS")
 )
-
-
-def _resolve_root() -> Path:
-    """项目根目录；打包运行时锚定到当前工作目录（工作区）。"""
-    if _FROZEN:
-        return Path.cwd()
-    return Path(__file__).resolve().parent.parent
 
 
 def _bundle_base() -> Path:
@@ -29,6 +20,35 @@ def _bundle_base() -> Path:
     if meipass:
         return Path(meipass)
     return Path(sys.executable).parent
+
+
+def _executable_dir() -> Path:
+    """可执行文件所在目录；打包后 .env / 日志 / 会话等外部文件均锚定到此。
+
+    注意：不能用 _bundle_base()，因为 PyInstaller onefile 下 _MEIPASS 是临时解压目录，
+    而 .env 等运行时外部文件始终位于 exe 本体旁边。
+    """
+    return Path(sys.executable).resolve().parent
+
+
+def _resolve_root() -> Path:
+    """项目根目录；打包运行时锚定到可执行文件所在目录（exe 旁），源码运行时为项目根。"""
+    if _FROZEN:
+        return _executable_dir()
+    return Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv() -> None:
+    """显式加载 .env：打包后从 exe 所在目录读取，源码运行时从项目根读取。
+
+    修复 Nuitka 打包后 .env 不被识别的问题——默认 load_dotenv() 从进程
+    当前工作目录（CWD）向上查找，而打包产物的 CWD 往往不是 exe 所在目录。
+    """
+    env_path = _executable_dir() / ".env" if _FROZEN else _resolve_root() / ".env"
+    load_dotenv(env_path)
+
+
+_load_dotenv()
 
 
 def _resolve_data_dir() -> Path:

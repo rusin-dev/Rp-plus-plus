@@ -13,12 +13,31 @@ def test_non_frozen_paths_match_source_tree():
     assert config_module._resolve_data_dir() == root / "src" / "data"
 
 
-def test_frozen_paths_use_cwd_and_bundle(monkeypatch, tmp_path):
+def test_frozen_paths_anchor_to_executable_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(config_module, "_FROZEN", True)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "bundle"), raising=False)
     monkeypatch.chdir(tmp_path)
-    assert config_module._resolve_root() == tmp_path
+    exe_dir = Path(sys.executable).resolve().parent
+    # 打包后根目录锚定到 exe 所在目录（而非 CWD），日志/会话等跟随 exe
+    assert config_module._resolve_root() == exe_dir
+    # 捆绑进程序的数据资源仍从 _MEIPASS（PyInstaller）或 exe 旁读取
     assert config_module._resolve_data_dir() == tmp_path / "bundle" / "src" / "data"
+
+
+def test_load_dotenv_uses_project_root_when_source(monkeypatch):
+    calls = []
+    monkeypatch.setattr(config_module, "load_dotenv", lambda path: calls.append(path))
+    monkeypatch.setattr(config_module, "_FROZEN", False)
+    config_module._load_dotenv()
+    assert calls == [config_module._resolve_root() / ".env"]
+
+
+def test_load_dotenv_uses_exe_dir_when_frozen(monkeypatch):
+    calls = []
+    monkeypatch.setattr(config_module, "load_dotenv", lambda path: calls.append(path))
+    monkeypatch.setattr(config_module, "_FROZEN", True)
+    config_module._load_dotenv()
+    assert calls == [config_module._executable_dir() / ".env"]
 
 
 def test_config_attrs_stable_in_non_frozen_env():

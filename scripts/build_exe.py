@@ -72,6 +72,21 @@ def _binary_name() -> str:
     return "rp.exe" if sys.platform == "win32" else "rp"
 
 
+def _sync_env_to_dist() -> None:
+    """把根目录 .env 同步到产物旁：不存在则复制，已存在则提示（避免覆盖手工修改）。"""
+    src = ROOT / ".env"
+    if not src.is_file():
+        return
+    import shutil
+
+    dst = ROOT / "dist" / ".env"
+    if dst.exists():
+        print(f"提示: {dst} 已存在，未覆盖；如需更新请手动从 {src} 复制")
+        return
+    shutil.copy2(src, dst)
+    print(f"已复制环境配置到产物旁: {dst}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="build_exe", description="一键编译单文件 rp 可执行程序（Nuitka）"
@@ -90,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     if exe.is_file():
         size_mb = exe.stat().st_size / 1024 / 1024
         print(f"构建成功: {exe}（{size_mb:.1f} MB）")
+    _sync_env_to_dist()
     return 0
 
 
