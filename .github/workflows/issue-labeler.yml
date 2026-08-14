@@ -1,0 +1,142 @@
+name: Issue Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: issue-labeler-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: 根据标题与内容自动打标签
+    runs-on: ubuntu-latest
+    # 仅处理 Issue，跳过由 PR 触发的同名事件
+    if: ${{ !github.event.issue.pull_request }}
+    steps:
+      - name: 分析并添加标签
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const issue = context.payload.issue;
+            const title = (issue.title || '').trim();
+            const body = issue.body || '';
+
+            // ------------------------------------------------------------
+            // 1. 解析正文：issue forms 的复选框会以「- [x] 选项文字」形式写入正文，
+            //    这些固定文案（如「API Key」「文档 / 工作流」「ui」）会污染关键词匹配，
+            //    因此先剥离所有复选框行，只保留用户真正填写的内容。
+            // ------------------------------------------------------------
+            const checkedItems = [];
+            const bodyLines = body.split(/\r?\n/);
+            const cleanLines = [];
+            const checkboxRe = /^\s*[-*+]\s+\[([ xX])\]\s*(.*)$/;
+
+            for (const line of bodyLines) {
+              const m = line.match(checkboxRe);
+              if (m) {
+                if (m[1].toLowerCase() === 'x') {
+                  checkedItems.push(m[2].trim());
+                }
+              } else {
+                cleanLines.push(line);
+              }
+            }
+
+            const cleanBody = cleanLines.join('\n');
+            const text = (title + '\n' + cleanBody).toLowerCase();
+
+            // ------------------------------------------------------------
+            // 2. 标签规则：label 为仓库中已有的标签名，keywords 为触发关键词。
+            //    英文关键词按词边界（忽略大小写，允许常见复数/时态后缀）匹配，
+            //    中文关键词按包含匹配。调整规则时直接修改下方数组即可。
+            // ------------------------------------------------------------
+            const rules = [
+              { label: 'bug',           keywords: ['bug', '缺陷', '报错', '错误', '崩溃', '闪退', '卡死', '异常', 'traceback', 'crash', 'error', 'exception', '失败'] },
+              { label: 'enhancement',   keywords: ['feature', '功能', '建议', '希望', '增强', '新增', '需求', 'enhancement', 'request'] },
+              { label: 'documentation', keywords: ['文档', 'readme', '教程', '说明', '指引', '注释', 'doc', 'documentation', 'workflow', '工作流'] },
+              { label: 'question',      keywords: ['怎么', '为什么', '请问', '求助', '咨询', 'how', 'why', 'question'] },
+              { label: 'performance',   keywords: ['性能', '慢', '卡顿', '优化', '速度', '内存', 'performance', 'slow', 'memory'] },
+              { label: 'security',      keywords: ['安全', '泄露', '泄漏', '密钥', 'security'] },
+              { label: 'dependencies',  keywords: ['依赖', '升级', 'dependency', 'dependencies', 'upgrade', 'bump'] },
+              { label: 'ui',            keywords: ['tui', '界面', '面板', '显示', '渲染', '排版', 'panel', 'ui'] },
+              { label: 'core',          keywords: ['基础设施', '事件总线', '提示词', '会话', 'session', 'prompt'] },
+              { label: 'api',           keywords: ['客户端', '工具', '子 agent', '子agent', '子代理', 'subagent', 'tool', 'client', 'agent'] },
+            ];
+
+            const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const asciiWord = /^[a-z0-9 +]+$/;
+
+            function matches(keyword) {
+              const kw = keyword.toLowerCase();
+              if (asciiWord.test(kw)) {
+                // 英文：词边界匹配，避免 ui 命中 build、doc 命中 docker 等
+                return new RegExp('\\b' + escapeRegex(kw) + '(?:s|es|ed|ing)?\\b').test(text);
+              }
+              return text.includes(kw);
+            }
+
+            const matched = new Set(
+              rules.filter((rule) => rule.keywords.some(matches)).map((rule) => rule.label)
+            );
+
+            // ------------------------------------------------------------
+            // 3. 把「涉及模块」等勾选的复选框映射到模块标签
+            //    （对应 feature_request.yml 中 area 字段的选项）
+            // ------------------------------------------------------------
+            for (const item of checkedItems) {
+              const t = item.toLowerCase();
+              if (t.startsWith('core')) {
+                matched.add('core');
+              } else if (t.startsWith('api')) {
+                matched.add('api');
+              } else if (t.startsWith('ui')) {
+                matched.add('ui');
+              } else if (t.includes('文档') || t.includes('工作流')) {
+                matched.add('documentation');
+              }
+            }
+
+            console.log(`Issue #${issue.number} 标题：${title.slice(0, 80)}`);
+
+            if (matched.size === 0) {
+              console.log('未匹配到任何标签，跳过。');
+              return;
+            }
+            console.log(`命中规则：${[...matched].join(', ')}`);
+
+            // ------------------------------------------------------------
+            // 4. 只添加仓库中真实存在、且当前尚未拥有的标签，避免 422 报错
+            // ------------------------------------------------------------
+            const { data: repoLabels } = await github.rest.issues.listLabelsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const existing = new Set(repoLabels.map((l) => l.name));
+
+            const current = new Set(issue.labels.map((l) => l.name));
+            const toAdd = [...matched].filter((l) => existing.has(l) && !current.has(l));
+            const missing = [...matched].filter((l) => !existing.has(l));
+
+            if (missing.length > 0) {
+              console.log(`跳过仓库中不存在的标签：${missing.join(', ')}`);
+            }
+            if (toAdd.length === 0) {
+              console.log('无需添加新标签（标签已存在或无有效标签）。');
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: toAdd,
+            });
+
+            console.log(`已为 #${issue.number} 添加标签：${toAdd.join(', ')}`);
