@@ -29,6 +29,7 @@ from .input import (
     COMMAND_COMPLETE_STYLE,
     COMMAND_DESCRIPTIONS,
     MODE_RICH_STYLES,
+    PickerHandle,
     SlashCommandCompleter,
     SlashCommandLexer,
     build_input_style,
@@ -103,6 +104,12 @@ class ChatApp:
         self._last_subagent_tool: str | None = None
         self._exit_armed = False
         self._command_display: tuple[str, list[tuple[str, str]]] | None = None
+        self._picker_mode: str | None = None
+        self._picker_title = ""
+        self._picker_items: list[tuple[str, str]] = []
+        self._picker_index = 0
+        self._picker_pending: str | None = None
+        self._awaiting_api_key: str | None = None
 
     # ---------- 主循环 ----------
 
@@ -350,10 +357,19 @@ class ChatApp:
             self._shutdown = True
             return
         self._exit_armed = False
+        if self._awaiting_api_key is not None:
+            self._finish_connect_api_key(self._awaiting_api_key, text.strip())
+            return
+        if self._consume_picker_pending():
+            return
         self._handle_input_text(text, echo=False)
 
     def _prompt_message(self) -> AnyFormattedText:
-        """构建提示符消息（可调用，模式切换后徽标实时更新）。"""
+        """构建提示符消息（可调用，模式切换后徽标实时更新；等待 API Key 时改为输入提示）。"""
+        if self._awaiting_api_key is not None:
+            return [
+                ("class:tool-prompt", f"API Key for {self._awaiting_api_key}: "),
+            ]
         mode = self._config.ACTIVE_MODE
         return [
             ("", " "),
@@ -363,21 +379,24 @@ class ChatApp:
         ]
 
     def _bottom_toolbar(self) -> AnyFormattedText:
-        """底部状态栏（类 Claude Code）：命令显示内容 + 左侧模式/Ctrl-C 提示 + 右侧模型/供应商。"""
+        """底部状态栏（类 Claude Code）：选择器/命令显示内容 + 左侧模式提示 + 右侧模型。"""
         fragments: StyleAndTextTuples = []
-        display = self._command_display
-        if display is not None:
-            title, lines = display
-            width = self._console.width or 80
-            head = f"── {title} "
-            fragments.append(("class:cmd-title", head))
-            fragments.append(("class:cmd-rule", "─" * max(width - len(head), 0)))
-            fragments.append(("", "\n"))
-            for style, text in lines:
-                fragments.append((style, text))
+        if self._picker_mode is not None:
+            fragments.extend(self._picker_fragments())
+        else:
+            display = self._command_display
+            if display is not None:
+                title, lines = display
+                width = self._console.width or 80
+                head = f"── {title} "
+                fragments.append(("class:cmd-title", head))
+                fragments.append(("class:cmd-rule", "─" * max(width - len(head), 0)))
                 fragments.append(("", "\n"))
-            fragments.append(("class:cmd-rule", "─" * width))
-            fragments.append(("", "\n"))
+                for style, text in lines:
+                    fragments.append((style, text))
+                    fragments.append(("", "\n"))
+                fragments.append(("class:cmd-rule", "─" * width))
+                fragments.append(("", "\n"))
         if self._exit_armed:
             left = "Press Ctrl-C again to exit"
         else:
@@ -391,6 +410,53 @@ class ChatApp:
         fragments.append(("", "    "))
         fragments.append(("class:status-right", right))
         return fragments
+
+    def _picker_fragments(self) -> StyleAndTextTuples:
+        """渲染底部交互选择器：标题 + 可高亮条目列表 + 操作提示。"""
+        fragments: StyleAndTextTuples = []
+        width = self._console.width or 80
+        head = f"── {self._picker_title} "
+        fragments.append(("class:cmd-title", head))
+        fragments.append(("class:cmd-rule", "─" * max(width - len(head), 0)))
+        fragments.append(("", "\n"))
+        for index, (_name, label) in enumerate(self._picker_items):
+            marker = "▸" if index == self._picker_index else " "
+            style = "class:picker-selected" if index == self._picker_index else ""
+            fragments.append((style, f"  {marker} {label}"))
+            fragments.append(("", "\n"))
+        fragments.append(("class:picker-hint", "  ↑ ↓ 切换 · Enter 确认 · Esc 取消"))
+        fragments.append(("", "\n"))
+        fragments.append(("class:cmd-rule", "─" * width))
+        fragments.append(("", "\n"))
+        return fragments
+
+    def _open_picker(self, title: str, items: list[tuple[str, str]], index: int = 0) -> None:
+        self._picker_mode = "menu"
+        self._picker_title = title
+        self._picker_items = items
+        self._picker_index = index
+        self._command_display = None
+
+    def _picker_move(self, delta: int) -> None:
+        if not self._picker_items:
+            return
+        self._picker_index = (self._picker_index + delta) % len(self._picker_items)
+
+    def _picker_confirm(self) -> None:
+        if not self._picker_items:
+            return
+        self._picker_pending = self._picker_items[self._picker_index][0]
+        self._picker_mode = None
+        self._picker_items = []
+
+    def _consume_picker_pending(self) -> bool:
+        """处理已确认的选择；返回 True 表示已消费（调用方应跳过输入文本处理）。"""
+        pending = self._picker_pending
+        self._picker_pending = None
+        if pending is None:
+            return False
+        self._connect_pick(pending)
+        return True
 
     def _primary_interrupt(self) -> bool:
         """处理 Ctrl-C：第一次进入待退出状态，第二次返回 True 表示退出。"""
@@ -409,7 +475,14 @@ class ChatApp:
                     completer=SlashCommandCompleter(),
                     complete_while_typing=True,
                     complete_style=COMMAND_COMPLETE_STYLE,
-                    key_bindings=build_key_bindings(on_interrupt=self._primary_interrupt),
+                    key_bindings=build_key_bindings(
+                        on_interrupt=self._primary_interrupt,
+                        picker=PickerHandle(
+                            active=lambda: self._picker_mode is not None,
+                            move=self._picker_move,
+                            confirm=self._picker_confirm,
+                        ),
+                    ),
                     lexer=SlashCommandLexer(),
                 )
             except Exception:
@@ -420,6 +493,17 @@ class ChatApp:
 
     def _read_input_plain(self) -> None:
         """stdin 非 TTY（如管道）时的回退输入。"""
+        if self._awaiting_api_key is not None:
+            self._console.print(
+                f"API Key for {self._awaiting_api_key}: ", style=_TOOL_STYLE, end=""
+            )
+            try:
+                raw = sys.stdin.readline()
+            except (EOFError, KeyboardInterrupt):
+                raw = ""
+            if raw:
+                self._finish_connect_api_key(self._awaiting_api_key, raw.strip())
+            return
         self._print_mode_badge()
         self._console.print(" ", end="")
         self._console.print("❯ ", style=_USER_STYLE, end="")
@@ -492,32 +576,87 @@ class ChatApp:
     # ---------- 供应商 / 模型 / 思考强度 ----------
 
     def _connect_command(self, name: str | None) -> None:
+        if name:
+            self._connect_pick(name)
+            return
+        self._show_connect_picker()
+
+    def _show_connect_picker(self) -> None:
+        """展示可连接的供应商：终端下用底部交互选择器，否则静态列表。"""
         providers = self._config.providers()
-        if not providers:
+        presets = self._config.presets()
+        if not providers and not presets:
             self._console.print(
-                "未配置任何 provider，请在 .env 中设置 PROVIDER_<NAME>_API_KEY",
+                "没有可用的 provider 预设，请在 src/data/providers/preset 中添加",
                 style=_ERROR_STYLE,
             )
             return
-        if name:
-            try:
-                provider = self._config.set_provider(name)
-            except ValueError as exc:
-                self._console.print(f"✖ {exc}", style=_ERROR_STYLE)
-                return
-            self._console.print(
-                f"已连接到 {provider.name}（{provider.api_url}），"
-                f"当前模型：{self._config.active_model()}",
-                style=_OK_STYLE,
+        items: list[tuple[str, str]] = []
+        index = 0
+        for name in sorted(providers) + sorted(presets):
+            if any(name == existing for existing, _ in items):
+                continue
+            provider = providers.get(name) or presets.get(name)
+            assert provider is not None
+            configured = name in providers
+            label = (
+                f"{name}  -  {provider.api_url}"
+                f"（{'已配置' if configured else '预设模板'}）"
             )
-            self._save_session()
+            items.append((name, label))
+            if name == self._config.ACTIVE_PROVIDER:
+                index = len(items) - 1
+        if not self._console.is_terminal:
+            lines = [
+                ("", f"  {'▸' if i == index else ' '} {label}") for i, (_, label) in enumerate(items)
+            ]
+            lines.append(("class:cmd-hint", "输入 /connect <名称> 使用预设或切换"))
+            self._command_display = ("可用供应商", lines)
             return
-        lines = []
-        for provider in providers.values():
-            marker = "▸" if provider.name == self._config.ACTIVE_PROVIDER else " "
-            lines.append(("", f"  {marker} {provider.name}  -  {provider.api_url}"))
-        lines.append(("class:cmd-hint", "输入 /connect <名称> 切换"))
-        self._command_display = ("已配置的供应商", lines)
+        self._open_picker("可用供应商（↑↓ 选择 · Enter 确认）", items, index)
+
+    def _connect_pick(self, name: str) -> None:
+        """处理选中的供应商：已配置则切换，否则要求输入 API Key。"""
+        provider = self._config.get_provider(name)
+        if provider is not None:
+            self._connect_switch(name)
+            return
+        if self._config.get_preset(name) is None:
+            self._console.print(f"✖ 未知的 provider 或预设：{name}", style=_ERROR_STYLE)
+            return
+        self._awaiting_api_key = name
+
+    def _connect_switch(self, name: str) -> None:
+        try:
+            provider = self._config.set_provider(name)
+        except ValueError as exc:
+            self._console.print(f"✖ {exc}", style=_ERROR_STYLE)
+            return
+        self._console.print(
+            f"已连接到 {provider.name}（{provider.api_url}），"
+            f"当前模型：{self._config.active_model()}",
+            style=_OK_STYLE,
+        )
+        self._save_session()
+
+    def _finish_connect_api_key(self, name: str, api_key: str) -> None:
+        """收集到 API Key 后用预设生成配置文件并切换。"""
+        self._awaiting_api_key = None
+        api_key = api_key.strip()
+        if not api_key:
+            self._console.print(f"✖ 未输入 API Key，{name} 未配置", style=_ERROR_STYLE)
+            return
+        try:
+            provider = self._config.use_preset(name, api_key)
+        except ValueError as exc:
+            self._console.print(f"✖ {exc}", style=_ERROR_STYLE)
+            return
+        self._console.print(
+            f"已配置并连接到 {provider.name}（{provider.api_url}），"
+            f"当前模型：{self._config.active_model()}",
+            style=_OK_STYLE,
+        )
+        self._save_session()
 
     def _models_command(self, model: str | None) -> None:
         provider = self._config.active_provider()

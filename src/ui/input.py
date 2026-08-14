@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable
 
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
-from prompt_toolkit.filters import has_completions
+from prompt_toolkit.filters import Condition, has_completions
 from prompt_toolkit.formatted_text.base import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
@@ -40,6 +40,8 @@ INPUT_STYLE = Style.from_dict(
         "cmd-title": "bold cyan",
         "cmd-rule": "dim",
         "cmd-hint": "italic dim",
+        "picker-selected": "bold black bg:ansibrightcyan",
+        "picker-hint": "italic dim",
     }
 )
 
@@ -74,13 +76,29 @@ def build_input_style() -> Style:
     return Style.from_dict(rules)
 
 
+class PickerHandle:
+    """底部交互菜单（选择器）控制器，由 ChatApp 提供，供键位绑定回调。"""
+
+    def __init__(
+        self,
+        active: Callable[[], bool],
+        move: Callable[[int], None],
+        confirm: Callable[[], None],
+    ) -> None:
+        self.active = active
+        self.move = move
+        self.confirm = confirm
+
+
 def build_key_bindings(
     on_interrupt: Callable[[], bool] | None = None,
+    picker: PickerHandle | None = None,
 ) -> KeyBindings:
     """构建输入键位绑定。
 
     - Shift+Tab 循环切换工作模式（plan→build→auto）
     - Ctrl-C：回调返回 True 时退出输入，否则仅刷新界面（用于“再按一次退出”）
+    - 选择器激活时：↑/↓ 移动高亮，Enter 确认选择
     """
 
     kb = KeyBindings()
@@ -97,6 +115,28 @@ def build_key_bindings(
         if on_interrupt is not None and on_interrupt():
             event.app.exit(exception=KeyboardInterrupt())
         event.app.invalidate()
+
+    if picker is not None:
+        active = Condition(picker.active)
+
+        @kb.add("up", filter=active & ~has_completions)
+        def _picker_up(event: KeyPressEvent) -> None:
+            picker.move(-1)
+            event.app.invalidate()
+
+        @kb.add("down", filter=active & ~has_completions)
+        def _picker_down(event: KeyPressEvent) -> None:
+            picker.move(1)
+            event.app.invalidate()
+
+        @kb.add("enter", filter=active)
+        def _picker_enter(event: KeyPressEvent) -> None:
+            picker.confirm()
+            event.app.exit(result="")
+
+        @kb.add("escape", filter=active)
+        def _picker_cancel(event: KeyPressEvent) -> None:
+            event.app.exit(result="")
 
     return kb
 

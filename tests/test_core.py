@@ -1,38 +1,42 @@
-import os
-
 import pytest
 
-from src.config import Config
+from src.config import Config, Provider
 from src.core.event_bus import Event, EventBus, EventTypes
 from src.core.logger import get_logger
 from src.core.prompt import get_prompt, list_prompts
 
 
-def _clear_provider_env(monkeypatch) -> None:
-    for key in list(os.environ):
-        if key.startswith("PROVIDER_"):
-            monkeypatch.delenv(key, raising=False)
+def _use_provider(monkeypatch, api_key="k", api_url="https://api.example.com/v1"):
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "test")
+    monkeypatch.setattr(
+        Config,
+        "providers",
+        lambda: {
+            "test": Provider(
+                name="test",
+                api_key=api_key,
+                api_url=api_url,
+                models=["m"],
+                default_model="m",
+            )
+        },
+    )
 
 
 def test_validate_missing_api_key_raises(monkeypatch):
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", None)
-    with pytest.raises(ValueError, match="CUSTOM_API_KEY"):
+    _use_provider(monkeypatch, api_key="")
+    with pytest.raises(ValueError, match="API key"):
         Config.validate()
 
 
 def test_validate_invalid_url_raises(monkeypatch):
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "test-key")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "not-a-url")
-    with pytest.raises(ValueError, match="CUSTOM_API_URL"):
+    _use_provider(monkeypatch, api_url="not-a-url")
+    with pytest.raises(ValueError, match="API 地址"):
         Config.validate()
 
 
 def test_validate_ok(monkeypatch):
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "test-key")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v1")
+    _use_provider(monkeypatch)
     Config.validate()
 
 

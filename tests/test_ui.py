@@ -494,20 +494,26 @@ def test_command_unknown_shows_hint(monkeypatch):
 # ---------- 供应商 / 模型 / 思考强度 ----------
 
 
-def _clear_provider_env(monkeypatch) -> None:
-    import os
+def _setup_providers(tmp_path, monkeypatch, specs) -> None:
+    import json
 
-    for key in list(os.environ):
-        if key.startswith("PROVIDER_"):
-            monkeypatch.delenv(key, raising=False)
-
-
-def _set_provider_env(monkeypatch, name, api_key, api_url, models, default):
-    up = name.upper()
-    monkeypatch.setenv(f"PROVIDER_{up}_API_KEY", api_key)
-    monkeypatch.setenv(f"PROVIDER_{up}_API_URL", api_url)
-    monkeypatch.setenv(f"PROVIDER_{up}_MODELS", models)
-    monkeypatch.setenv(f"PROVIDER_{up}_DEFAULT_MODEL", default)
+    providers_dir = tmp_path / "providers"
+    providers_dir.mkdir(parents=True, exist_ok=True)
+    for name, api_key, api_url, models, default in specs:
+        data = {
+            "name": name,
+            "api_key": api_key,
+            "api_url": api_url,
+            "models": models.split(","),
+            "default_model": default,
+        }
+        (providers_dir / f"{name}.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    monkeypatch.setattr(Config, "PROVIDER_DIR", providers_dir)
+    monkeypatch.setattr(Config, "RUNTIME_STATE_FILE", tmp_path / "state" / "config.json")
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", None)
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
 
 
 def test_command_variants_lists_and_switches(monkeypatch, tmp_path):
@@ -526,11 +532,14 @@ def test_command_variants_lists_and_switches(monkeypatch, tmp_path):
 
 
 def test_command_connect_switches_provider(monkeypatch, tmp_path):
-    _clear_provider_env(monkeypatch)
-    _set_provider_env(
-        monkeypatch, "deepseek", "k1", "https://api.deepseek.com", "chat,reasoner", "chat"
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [
+            ("deepseek", "k1", "https://api.deepseek.com", "chat,reasoner", "chat"),
+            ("openai", "k2", "https://api.openai.com/v1", "gpt-4o", "gpt-4o"),
+        ],
     )
-    _set_provider_env(monkeypatch, "openai", "k2", "https://api.openai.com/v1", "gpt-4o", "gpt-4o")
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
@@ -541,15 +550,18 @@ def test_command_connect_switches_provider(monkeypatch, tmp_path):
     assert "openai" in text
     app._run_command("/connect openai")
     assert Config.ACTIVE_PROVIDER == "openai"
-    assert Config.CUSTOM_API_KEY == "k2"
+    provider = Config.get_provider("openai")
+    assert provider is not None
+    assert provider.api_key == "k2"
     app._run_command("/connect nope")
     assert Config.ACTIVE_PROVIDER == "openai"
 
 
 def test_command_models_switches_model(monkeypatch, tmp_path):
-    _clear_provider_env(monkeypatch)
-    _set_provider_env(
-        monkeypatch, "deepseek", "k1", "https://api.deepseek.com", "chat,reasoner", "chat"
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "k1", "https://api.deepseek.com", "chat,reasoner", "chat")],
     )
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
     monkeypatch.setattr(Config, "ACTIVE_MODEL", "chat")
@@ -564,6 +576,119 @@ def test_command_models_switches_model(monkeypatch, tmp_path):
     assert Config.ACTIVE_MODEL == "reasoner"
     app._run_command("/models nope")
     assert Config.ACTIVE_MODEL == "reasoner"
+
+
+def _setup_preset(tmp_path, monkeypatch, name="deepseek", api_url="https://api.deepseek.com", models="chat,reasoner", default="chat"):
+    import json
+
+    preset_dir = tmp_path / "preset"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / f"{name}.json").write_text(
+        json.dumps(
+            {
+                "name": name,
+                "api_url": api_url,
+                "models": models.split(","),
+                "default_model": default,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(Config, "PRESET_DIR", preset_dir)
+    monkeypatch.setattr(Config, "PROVIDER_DIR", tmp_path / "providers")
+    monkeypatch.setattr(Config, "RUNTIME_STATE_FILE", tmp_path / "state" / "config.json")
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", None)
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
+
+
+def test_command_connect_opens_picker_in_terminal(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/connect")
+    assert app._picker_mode == "menu"
+    assert app._command_display is None
+    names = [name for name, _ in app._picker_items]
+    assert "deepseek" in names
+    assert "预设模板" in app._picker_items[0][1]
+
+
+def test_command_connect_picker_moves_and_confirms(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch, name="deepseek", api_url="https://api.deepseek.com")
+    _setup_preset(tmp_path, monkeypatch, name="openai", api_url="https://api.openai.com/v1")
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/connect")
+    assert app._picker_index == 0
+    app._picker_move(1)
+    assert app._picker_index == 1
+    app._picker_move(-1)
+    assert app._picker_index == 0
+    app._picker_confirm()
+    assert app._picker_mode is None
+    assert app._picker_pending == "deepseek"
+
+
+def test_command_connect_confirm_configured_switches(monkeypatch, tmp_path):
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "k1", "https://api.deepseek.com", "chat", "chat")],
+    )
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/connect")
+    app._picker_confirm()
+    assert app._consume_picker_pending() is True
+    assert Config.ACTIVE_PROVIDER == "deepseek"
+
+
+def test_command_connect_confirm_preset_awaits_api_key(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/connect")
+    app._picker_confirm()
+    assert app._consume_picker_pending() is True
+    assert app._awaiting_api_key == "deepseek"
+
+
+def test_finish_connect_api_key_creates_provider(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _make_app(monkeypatch)
+    app._awaiting_api_key = "deepseek"
+    app._finish_connect_api_key("deepseek", "sk-abc")
+    assert app._awaiting_api_key is None
+    assert Config.ACTIVE_PROVIDER == "deepseek"
+    provider = Config.get_provider("deepseek")
+    assert provider is not None
+    assert provider.api_key == "sk-abc"
+    target = tmp_path / "providers" / "deepseek.json"
+    assert target.is_file()
+
+
+def test_finish_connect_api_key_blank_rejected(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _make_app(monkeypatch)
+    app._awaiting_api_key = "deepseek"
+    app._finish_connect_api_key("deepseek", "   ")
+    assert app._awaiting_api_key is None
+    assert Config.ACTIVE_PROVIDER is None
+
+
+def test_connect_display_includes_presets_and_configured(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch, name="openai", api_url="https://api.openai.com/v1")
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "k1", "https://api.deepseek.com", "chat", "chat")],
+    )
+    app, bus = _make_app(monkeypatch)
+    app._run_command("/connect")
+    assert app._command_display is not None
+    text = " ".join(part for _, part in app._command_display[1])
+    assert "deepseek" in text
+    assert "openai" in text
+    assert "已配置" in text
+    assert "预设模板" in text
 
 
 def test_command_compact_truncates(monkeypatch, tmp_path):

@@ -1,0 +1,11 @@
+{
+    "name": "Kimi | Moonshot AI",
+    "api_url": "https://api.moonshot.cn/v1",
+    "models": [
+        "kimi-k3",
+        "kimi-k2.7-code",
+        "kimi-k2.6",
+        "kimi-k2.5"
+    ],
+    "default_model": "kimi-k3"
+}

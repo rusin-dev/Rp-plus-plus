@@ -23,7 +23,7 @@
   pytest
   ```
 
-* 请勿提交 `.env` 等敏感配置（已加入 `.gitignore`）。
+* 请勿提交 `.env`、`src/data/providers/*.json` 等敏感配置（已加入 `.gitignore`）。
 
 ## 目录约定
 

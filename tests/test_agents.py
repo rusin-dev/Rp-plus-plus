@@ -11,7 +11,7 @@ from src.api.agents import (
     load_agents,
 )
 from src.api.tools import ToolRegistry
-from src.config import Config
+from src.config import Config, Provider
 from src.core.event_bus import EventBus, EventTypes
 
 
@@ -104,8 +104,20 @@ def test_subagent_runner_streams_and_returns(monkeypatch, tmp_path):
 
     from src.api import agents as agents_module
 
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "k")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v1")
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "test")
+    monkeypatch.setattr(
+        Config,
+        "providers",
+        lambda: {
+            "test": Provider(
+                name="test",
+                api_key="k",
+                api_url="https://api.example.com/v1",
+                models=["m"],
+                default_model="m",
+            )
+        },
+    )
     bus = EventBus()
     tools = ToolRegistry().filtered({"read"})
     subagent = SubAgent(

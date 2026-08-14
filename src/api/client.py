@@ -20,15 +20,11 @@ from .tools import ToolRegistry
 
 
 def client_credentials(config: type[Config]) -> tuple[str, str]:
-    """返回当前生效的凭证：优先旧版 CUSTOM_*，否则取活动 provider。"""
-    api_key = config.CUSTOM_API_KEY or ""
-    base_url = config.CUSTOM_API_URL or ""
-    if not api_key:
-        provider = config.active_provider()
-        if provider is not None:
-            api_key = provider.api_key or ""
-            base_url = provider.api_url or ""
-    return api_key, base_url
+    """返回当前活动 provider 的凭证。"""
+    provider = config.active_provider()
+    if provider is None:
+        return "", ""
+    return provider.api_key or "", provider.api_url or ""
 
 
 def make_client(config: type[Config]) -> OpenAI:

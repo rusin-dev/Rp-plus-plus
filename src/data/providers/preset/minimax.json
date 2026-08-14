@@ -1,0 +1,9 @@
+{
+    "name": "minimax",
+    "api_url": "https://api.minimaxi.com/v1",
+    "models": [
+        "minimax-m3",
+        "minimax-m2.7"
+    ],
+    "default_model": "minimax-m3"
+}

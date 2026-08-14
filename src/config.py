@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -39,11 +40,7 @@ def _resolve_root() -> Path:
 
 
 def _load_dotenv() -> None:
-    """显式加载 .env：打包后从 exe 所在目录读取，源码运行时从项目根读取。
-
-    修复 Nuitka 打包后 .env 不被识别的问题——默认 load_dotenv() 从进程
-    当前工作目录（CWD）向上查找，而打包产物的 CWD 往往不是 exe 所在目录。
-    """
+    """显式加载 .env：打包后从 exe 所在目录读取，源码运行时从项目根读取。"""
     env_path = _executable_dir() / ".env" if _FROZEN else _resolve_root() / ".env"
     load_dotenv(env_path)
 
@@ -63,6 +60,17 @@ def _resolve_data_dir() -> Path:
     if nearby.is_dir():
         return nearby
     return source
+
+
+def _resolve_provider_dir() -> Path:
+    """用户生成的 provider 配置目录（含 api_key 的 JSON 文件）。
+
+    源码运行时直接写入 src/data/providers/；打包运行时捆绑目录只读，
+    改写到 exe 旁的 src/data/providers/（可写）。
+    """
+    if _FROZEN:
+        return _executable_dir() / "src" / "data" / "providers"
+    return _resolve_root() / "src" / "data" / "providers"
 
 
 def _get_int(name: str, default: int) -> int:
@@ -89,23 +97,16 @@ class Provider:
     api_url: str
     models: list[str]
     default_model: str
-    key_env: str
-    url_env: str
-    models_env: str = ""
+    config_file: str = ""
 
 
 class Config:
     # 通用设置
     ROOT_DIR = _resolve_root()
 
-    # 兼容旧版单供应商配置（未配置 PROVIDER_* 时作为 fallback）
-    CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
-    CUSTOM_API_URL = os.getenv("CUSTOM_API_URL", "https://api.deepseek.com/v1")
-    RP_MODEL = os.getenv("RP_MODEL", "deepseek-v4-flash")
-
     # 当前选择的供应商与模型（运行时可通过 /connect /models 修改）
-    ACTIVE_PROVIDER: str | None = os.getenv("PROVIDER")
-    ACTIVE_MODEL: str | None = os.getenv("MODEL")
+    ACTIVE_PROVIDER: str | None = None
+    ACTIVE_MODEL: str | None = None
 
     # 思考强度（fast / default / deep），运行时可通过 /variants 修改
     ACTIVE_VARIANT: str = os.getenv("RP_VARIANT", "default")
@@ -180,6 +181,13 @@ class Config:
     # 提示词数据目录
     DATA_DIR = _resolve_data_dir()
 
+    # provider 预设目录（只读模板，不含 api_key）与用户配置目录（含 api_key）
+    PRESET_DIR = DATA_DIR / "providers" / "preset"
+    PROVIDER_DIR = _resolve_provider_dir()
+
+    # 运行时状态文件（当前选中的 provider / model，跨会话持久化）
+    RUNTIME_STATE_FILE = ROOT_DIR / ".rp" / "config.json"
+
     # 会话存储目录
     SESSION_DIR = _get_path("SESSION_DIR", ROOT_DIR / ".rp" / "sessions")
 
@@ -195,21 +203,35 @@ class Config:
 
     @classmethod
     def providers(cls) -> dict[str, Provider]:
-        """解析环境变量中的全部 provider；无 PROVIDER_* 时回退到旧版单供应商。"""
+        """读取 src/data/providers/*.json 中的全部 provider 配置。"""
         found: dict[str, Provider] = {}
-        for key in os.environ:
-            if key.startswith("PROVIDER_") and key.endswith("_API_KEY"):
-                name = key[len("PROVIDER_") : -len("_API_KEY")].lower()
-                if name and name not in found:
-                    found[name] = cls._provider_from_env(name)
-        if found:
+        if not cls.PROVIDER_DIR.is_dir():
             return found
-        legacy = cls._legacy_provider()
-        return {"custom": legacy} if legacy is not None else {}
+        for path in sorted(cls.PROVIDER_DIR.glob("*.json")):
+            provider = cls._provider_from_file(path)
+            if provider is not None:
+                found[provider.name] = provider
+        return found
+
+    @classmethod
+    def presets(cls) -> dict[str, Provider]:
+        """读取 src/data/providers/preset/*.json 中的全部预设模板（不含 api_key）。"""
+        found: dict[str, Provider] = {}
+        if not cls.PRESET_DIR.is_dir():
+            return found
+        for path in sorted(cls.PRESET_DIR.glob("*.json")):
+            provider = cls._provider_from_file(path)
+            if provider is not None:
+                found[provider.name] = provider
+        return found
 
     @classmethod
     def get_provider(cls, name: str) -> Provider | None:
         return cls.providers().get(name.lower())
+
+    @classmethod
+    def get_preset(cls, name: str) -> Provider | None:
+        return cls.presets().get(name.lower())
 
     @classmethod
     def active_provider(cls) -> Provider | None:
@@ -232,7 +254,7 @@ class Config:
                 return provider.default_model
             if provider.models:
                 return provider.models[0]
-        return cls.RP_MODEL or ""
+        return ""
 
     @classmethod
     def set_provider(cls, name: str) -> Provider:
@@ -241,10 +263,31 @@ class Config:
         if provider is None:
             raise ValueError(f"未知的 provider：{name}，可用：{', '.join(cls.providers()) or '无'}")
         cls.ACTIVE_PROVIDER = provider.name
-        cls.CUSTOM_API_KEY = provider.api_key
-        cls.CUSTOM_API_URL = provider.api_url
         cls.ACTIVE_MODEL = provider.default_model
-        cls.RP_MODEL = provider.default_model
+        cls._save_runtime_state()
+        return provider
+
+    @classmethod
+    def use_preset(cls, name: str, api_key: str) -> Provider:
+        """从预设生成 provider 配置文件（含 api_key）并切换到它。"""
+        preset = cls.get_preset(name)
+        if preset is None:
+            raise ValueError(f"未知的预设：{name}，可用：{', '.join(cls.presets()) or '无'}")
+        cls.PROVIDER_DIR.mkdir(parents=True, exist_ok=True)
+        data = {
+            "name": preset.name,
+            "api_url": preset.api_url,
+            "models": preset.models,
+            "default_model": preset.default_model,
+            "api_key": api_key,
+        }
+        path = cls.PROVIDER_DIR / f"{preset.name}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        provider = cls._provider_from_file(path)
+        assert provider is not None
+        cls.ACTIVE_PROVIDER = provider.name
+        cls.ACTIVE_MODEL = provider.default_model
+        cls._save_runtime_state()
         return provider
 
     @classmethod
@@ -256,7 +299,35 @@ class Config:
                 f"模型 {model} 不在 {provider.name} 的可用列表：{', '.join(provider.models)}"
             )
         cls.ACTIVE_MODEL = model
-        cls.RP_MODEL = model
+        cls._save_runtime_state()
+
+    # ---------- 运行时状态 ----------
+
+    @classmethod
+    def load_runtime_state(cls) -> None:
+        """启动时从 .rp/config.json 恢复当前选中的 provider / model。"""
+        path = cls.RUNTIME_STATE_FILE
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        provider = data.get("active_provider")
+        model = data.get("active_model")
+        cls.ACTIVE_PROVIDER = provider if isinstance(provider, str) else None
+        cls.ACTIVE_MODEL = model if isinstance(model, str) else None
+
+    @classmethod
+    def _save_runtime_state(cls) -> None:
+        cls.RUNTIME_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "active_provider": cls.ACTIVE_PROVIDER,
+            "active_model": cls.ACTIVE_MODEL,
+        }
+        cls.RUNTIME_STATE_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     # ---------- Variants ----------
 
@@ -312,12 +383,18 @@ class Config:
     # ---------- 解析 ----------
 
     @classmethod
-    def _provider_from_env(cls, name: str) -> Provider:
-        up = name.upper()
-        api_key = os.getenv(f"PROVIDER_{up}_API_KEY", "").strip()
-        api_url = os.getenv(f"PROVIDER_{up}_API_URL", "").strip()
-        models = [m.strip() for m in os.getenv(f"PROVIDER_{up}_MODELS", "").split(",") if m.strip()]
-        default_model = os.getenv(f"PROVIDER_{up}_DEFAULT_MODEL", "").strip()
+    def _provider_from_file(cls, path: Path) -> Provider | None:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        name = str(data.get("name") or path.stem).strip().lower()
+        api_key = str(data.get("api_key") or "").strip()
+        api_url = str(data.get("api_url") or "").strip()
+        models = [m.strip() for m in data.get("models", []) if isinstance(m, str) and m.strip()]
+        default_model = str(data.get("default_model") or "").strip()
         if default_model and default_model not in models:
             models.insert(0, default_model)
         if not default_model and models:
@@ -328,26 +405,7 @@ class Config:
             api_url=api_url,
             models=models,
             default_model=default_model,
-            key_env=f"PROVIDER_{up}_API_KEY",
-            url_env=f"PROVIDER_{up}_API_URL",
-            models_env=f"PROVIDER_{up}_MODELS",
-        )
-
-    @classmethod
-    def _legacy_provider(cls) -> Provider | None:
-        api_key = cls.CUSTOM_API_KEY or ""
-        api_url = cls.CUSTOM_API_URL or ""
-        model = cls.RP_MODEL or ""
-        if not api_key:
-            return None
-        return Provider(
-            name="custom",
-            api_key=api_key,
-            api_url=api_url,
-            models=[model] if model else [],
-            default_model=model,
-            key_env="CUSTOM_API_KEY",
-            url_env="CUSTOM_API_URL",
+            config_file=str(path),
         )
 
     @classmethod
@@ -356,17 +414,19 @@ class Config:
         provider = cls.active_provider()
         if provider is None:
             raise ValueError(
-                "未配置任何 API provider，请设置 CUSTOM_API_KEY 或 "
-                "PROVIDER_<NAME>_API_KEY（参考 .env.example）"
+                "未配置任何 API provider，请运行 /connect 使用预设并输入 API Key"
             )
         if not provider.api_key:
             raise ValueError(
-                f"缺少 {provider.name} 的 API key（{provider.key_env}），请在 .env 中配置"
+                f"缺少 {provider.name} 的 API key（{provider.config_file}），"
+                f"请运行 /connect 重新配置"
             )
         if not provider.api_url.startswith(("http://", "https://")):
-            raise ValueError(f"非法的 {provider.url_env}: {provider.api_url}")
+            raise ValueError(f"非法的 API 地址: {provider.api_url}")
         if not provider.default_model and not provider.models:
             raise ValueError(
-                f"provider {provider.name} 未配置任何模型"
-                f"（{provider.models_env or 'CUSTOM_API_MODELS'}）"
+                f"provider {provider.name} 未配置任何模型（{provider.config_file}）"
             )
+
+
+Config.load_runtime_state()

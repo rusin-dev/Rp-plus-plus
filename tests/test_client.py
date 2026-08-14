@@ -8,7 +8,7 @@ from openai.types.chat import (
 
 from src.api.client import ChatClient, stream_completion
 from src.api.tools import ToolRegistry
-from src.config import Config
+from src.config import Config, Provider
 from src.core.event_bus import EventBus, EventTypes
 
 
@@ -24,9 +24,30 @@ def _tool_chunk(index: int, tool_id: str, name: str, arguments: str):
     return SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
 
 
+def _provider(
+    name: str = "test",
+    api_key: str = "test-key",
+    api_url: str = "https://api.example.com/v1",
+    models: list[str] | None = None,
+) -> Provider:
+    return Provider(
+        name=name,
+        api_key=api_key,
+        api_url=api_url,
+        models=list(models or []),
+        default_model=(models or ["m"])[0],
+    )
+
+
+def _use_provider(monkeypatch, name="test", api_key="test-key", api_url="https://api.example.com/v1"):
+    provider = _provider(name=name, api_key=api_key, api_url=api_url)
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", name)
+    monkeypatch.setattr(Config, "providers", lambda: {name: provider})
+    return provider
+
+
 def _client(monkeypatch, bus: EventBus) -> ChatClient:
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "test-key")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v1")
+    _use_provider(monkeypatch)
     return ChatClient(Config, bus, ToolRegistry())
 
 
@@ -110,12 +131,13 @@ def test_error_emitted_on_failure(monkeypatch):
 
 
 def test_client_recreated_on_provider_change(monkeypatch):
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "k1")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v1")
+    provider_a = _provider(name="a", api_key="k1", api_url="https://api.example.com/v1")
+    provider_b = _provider(name="b", api_key="k2", api_url="https://api.example.com/v2")
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "a")
+    monkeypatch.setattr(Config, "providers", lambda: {"a": provider_a})
     client = ChatClient(Config, EventBus(), ToolRegistry())
     first = client._client
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "k2")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v2")
+    monkeypatch.setattr(Config, "providers", lambda: {"b": provider_b})
     second = client._ensure_client()
     assert first is not second
     assert client._ensure_client() is second
@@ -123,8 +145,7 @@ def test_client_recreated_on_provider_change(monkeypatch):
 
 def test_stream_passes_variant_extra_body(monkeypatch):
     bus = EventBus()
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "test-key")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v1")
+    _use_provider(monkeypatch)
     monkeypatch.setattr(Config, "ACTIVE_VARIANT", "fast")
     client = ChatClient(Config, bus, ToolRegistry())
     captured = {}
@@ -207,8 +228,7 @@ def test_usage_accumulates_across_rounds(monkeypatch):
 
 def test_stream_uses_active_model(monkeypatch):
     bus = EventBus()
-    monkeypatch.setattr(Config, "CUSTOM_API_KEY", "test-key")
-    monkeypatch.setattr(Config, "CUSTOM_API_URL", "https://api.example.com/v1")
+    _use_provider(monkeypatch)
     monkeypatch.setattr(Config, "ACTIVE_MODEL", "my-model")
     client = ChatClient(Config, bus, ToolRegistry())
     captured = {}

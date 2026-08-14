@@ -60,6 +60,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# 生成的供应商配置（含 API Key）；预设模板在 src/data/providers/preset/ 不受影响
+src/data/providers/*.json
+
 # Editor
 .vscode/
 .idea/

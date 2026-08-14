@@ -1,0 +1,11 @@
+{
+    "name": "GLM",
+    "api_url": "https://open.bigmodel.cn/api/paas/v4",
+    "models": [
+        "glm-5.2",
+        "glm-5.1",
+        "glm-5",
+        "glm-4.7"
+    ],
+    "default_model": "glm-5.2"
+}

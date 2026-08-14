@@ -28,7 +28,9 @@ pip install -e .
 
 # 配置 API 密钥
 cp .env.example .env
-# 编辑 .env，填入 API 密钥（PROVIDER_<名称>_API_KEY，或旧版 CUSTOM_API_KEY）
+# 编辑 .env，填入非供应商设置（日志等）
+# 供应商配置使用 JSON：运行 rp 后输入 /connect 选择预设并输入 API Key
+#   （详见下方「多供应商与模型」）
 ```
 
 安装完成后，即可使用 `rp` 命令（等价于 `python -m src.main`）。
@@ -97,22 +99,33 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 
 对话自动保存到 `.rp/sessions/`（已加入 `.gitignore`），下次启动可用 `/session` 恢复上下文。
 
-### 多供应商与模型（.env）
+### 多供应商与模型（JSON）
 
-`.env` 支持配置多个供应商，每个供应商用 `PROVIDER_<名称>_` 前缀声明，运行时用 `/connect`、`/models` 切换（仅对当前会话生效）：
+供应商配置使用 JSON 文件存储，不再使用环境变量：
+
+- **预设模板**：`src/data/providers/preset/<名称>.json`，只含 `api_url` / `models` / `default_model`，不含 API Key，随项目分发。
+- **使用预设**：运行 `rp` 后输入 `/connect`，底部固定区域会展示可用供应商列表，用 `↑ ↓` 切换、`Enter` 确认，随后提示输入 API Key，程序自动生成 `src/data/providers/<名称>.json`（预设元信息 + `api_key`）并切换。
+- **当前选中**：`/connect`、`/models` 切换的 provider/model 会持久化到 `.rp/config.json`，下次启动自动恢复。
+
+手动创建 `src/data/providers/<名称>.json` 示例：
+
+```json
+{
+    "name": "deepseek",
+    "api_url": "https://api.deepseek.com/v1",
+    "models": ["deepseek-chat", "deepseek-reasoner"],
+    "default_model": "deepseek-chat",
+    "api_key": "sk-xxx"
+}
+```
+
+其余设置仍在 `.env` 中配置：
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `PROVIDER` | 当前供应商名称 | 第一个配置的供应商 |
-| `MODEL` | 当前模型名称（覆盖供应商默认模型） | 无 |
-| `PROVIDER_<名称>_API_KEY` | 该供应商的 API 密钥（必填） | 无 |
-| `PROVIDER_<名称>_API_URL` | 该供应商的 API 地址 | `https://api.deepseek.com/v1` |
-| `PROVIDER_<名称>_MODELS` | 可用模型（逗号分隔） | 无 |
-| `PROVIDER_<名称>_DEFAULT_MODEL` | 该供应商默认模型 | 列表第一个 |
 | `RP_VARIANT` | 思考强度（`fast` / `default` / `deep`） | `default` |
 | `RP_MODE` | 工作模式（`plan` / `build` / `auto`） | `auto` |
 | `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`，`auto` 表示 ddg 失败时回退 bing） | `bing` |
-| `CUSTOM_API_KEY` / `CUSTOM_API_URL` / `RP_MODEL` | 旧版单供应商配置（未配置 `PROVIDER_*` 时生效） | - |
 | `LOG_LEVEL` | 日志级别 | `INFO` |
 | `LOG_DIR` | 日志目录 | `log/` |
 | `SESSION_DIR` | 会话存储目录 | `.rp/sessions/` |
@@ -127,7 +140,7 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 ```
 src/
 ├── main.py              # 入口：组装三层并启动
-├── config.py            # 环境变量配置与校验（多供应商 / 模式 / 变体）
+├── config.py            # 配置与校验（JSON 供应商预设 / 模式 / 变体）
 ├── core/                # 基础设施层
 │   ├── logger.py        # 日志（文件 + 控制台）
 │   ├── event_bus.py     # 事件总线（线程间通信）
@@ -145,7 +158,9 @@ src/
 │   ├── mascot.py        # 启动吉祥物
 │   └── subagent_panel.py# 子 Agent 执行面板（实时展示 / 折叠）
 ├── data/general/        # 系统提示词
-└── data/agents/         # 子 Agent 提示词（frontmatter 声明角色与工具权限）
+├── data/agents/         # 子 Agent 提示词（frontmatter 声明角色与工具权限）
+├── data/providers/preset/ # 供应商预设模板（JSON，不含 API Key）
+└── data/providers/      # 使用预设后生成的供应商配置（含 API Key）
 scripts/
 ├── build_exe.py         # Nuitka 一键编译单文件可执行程序
 └── launcher.py          # 打包入口（转发到 src.main:main）
