@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -104,6 +106,7 @@ def test_subagent_runner_streams_and_returns(monkeypatch, tmp_path):
 
     from src.api import agents as agents_module
 
+    monkeypatch.setattr(Config, "AUTO_GIT", False)
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "test")
     monkeypatch.setattr(
         Config,
@@ -145,3 +148,63 @@ def test_subagent_runner_streams_and_returns(monkeypatch, tmp_path):
     assert types[-1] == EventTypes.SUBAGENT_DONE
     assert events[0].data["agent_id"] == "reviewer"
     assert events[-1].data["result"] == "审查完成"
+
+
+def test_subagent_runner_task_branch_approved(monkeypatch, tmp_path):
+    """启用自动 git 时，委派任务在独立分支执行，批准后回到主分支。"""
+    if shutil.which("git") is None:
+        pytest.skip("git 不可用，跳过任务分支集成测试")
+    from src.api import agents as agents_module
+
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    monkeypatch.setattr(Config, "AUTO_GIT", True)
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "test")
+    monkeypatch.setattr(
+        Config,
+        "providers",
+        lambda: {
+            "test": Provider(
+                name="test",
+                api_key="k",
+                api_url="https://api.example.com/v1",
+                models=["m"],
+                default_model="m",
+            )
+        },
+    )
+    bus = EventBus()
+    tools = ToolRegistry().filtered({"read"})
+    subagent = SubAgent(
+        name="backend_builder",
+        description="d",
+        tools=["read"],
+        prompt="# 角色",
+        path=Path("x.md"),
+    )
+    runner = SubAgentRunner(Config, bus, tools, subagent, "写一个模块")
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: iter([_chunk("模块完成")]))
+        )
+    )
+    monkeypatch.setattr(agents_module, "make_client", lambda config: fake_client)
+
+    result = runner.run(ask=lambda q: "y")
+    assert result == "模块完成"
+
+    from src.core.git_ops import current_branch
+
+    main = current_branch(tmp_path)
+    assert main is not None
+    leftover = subprocess.run(
+        ["git", "branch", "--list", "task/*"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert leftover.stdout.strip() == ""
+    events = bus.drain()
+    types = [e.type for e in events]
+    assert EventTypes.SUBAGENT_DONE in types
+    assert EventTypes.SUBAGENT_ERROR not in types

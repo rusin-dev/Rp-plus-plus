@@ -21,6 +21,7 @@ from rich.text import Text
 from ..api.client import ChatClient
 from ..config import Config
 from ..core.event_bus import Event, EventBus, EventTypes
+from ..core.git_ops import CheckpointStore, commit_changes, ensure_repo, rollback_to
 from ..core.logger import get_logger
 from ..core.session import Session, SessionStore
 from .cancel_watcher import EscCancelWatcher
@@ -110,6 +111,10 @@ class ChatApp:
         self._picker_index = 0
         self._picker_pending: str | None = None
         self._awaiting_api_key: str | None = None
+        self._git_ready = False
+        self._checkpoint_store = CheckpointStore(config.ROOT_DIR)
+        self._picker_kind: str | None = None
+        self._awaiting_rollback: str | None = None
 
     # ---------- 主循环 ----------
 
@@ -129,6 +134,7 @@ class ChatApp:
         try:
             if self._console.is_terminal:
                 self._show_mascot()
+            self._auto_git_start()
             if self._initial_message:
                 self._submit(self._initial_message)
                 self._initial_message = None
@@ -278,6 +284,7 @@ class ChatApp:
                 self._console.print("⏹ 回答已中断", style=_DIM_STYLE)
             self._stop_cancel_watcher()
             self._save_session()
+            self._auto_commit()
             if self._single_shot:
                 self._shutdown = True
         elif event_type == EventTypes.ERROR:
@@ -290,6 +297,7 @@ class ChatApp:
             self._error = event.data
             self._console.print(f"✖ {event.data}", style=_ERROR_STYLE)
             self._save_session()
+            self._auto_commit()
             if self._single_shot:
                 self._shutdown = True
         elif event_type == EventTypes.ASK_QUESTION:
@@ -433,11 +441,18 @@ class ChatApp:
         fragments.append(("", "\n"))
         return fragments
 
-    def _open_picker(self, title: str, items: list[tuple[str, str]], index: int = 0) -> None:
+    def _open_picker(
+        self,
+        title: str,
+        items: list[tuple[str, str]],
+        index: int = 0,
+        kind: str = "connect",
+    ) -> None:
         self._picker_mode = "menu"
         self._picker_title = title
         self._picker_items = items
         self._picker_index = index
+        self._picker_kind = kind
         self._command_display = None
 
     def _picker_move(self, delta: int) -> None:
@@ -458,7 +473,10 @@ class ChatApp:
         self._picker_pending = None
         if pending is None:
             return False
-        self._connect_pick(pending)
+        if self._picker_kind == "checkpoints":
+            self._confirm_rollback(pending)
+        else:
+            self._connect_pick(pending)
         return True
 
     def _primary_interrupt(self) -> bool:
@@ -529,6 +547,14 @@ class ChatApp:
     def _handle_input_text(self, raw: str, echo: bool) -> None:
         self._exit_armed = False
         text = raw.strip()
+        if self._awaiting_rollback is not None:
+            ref = self._awaiting_rollback
+            self._awaiting_rollback = None
+            if text.lower() in {"y", "yes"}:
+                self._execute_rollback(ref)
+            else:
+                self._console.print("已取消回滚", style=_DIM_STYLE)
+            return
         if not text:
             return
         if text.lower() in {"exit", "quit", "q"}:
@@ -569,6 +595,10 @@ class ChatApp:
             self._usage_command()
         elif name == "init":
             self._init_command(force=arg == "-f")
+        elif name == "checkpoints":
+            self._checkpoints_command(arg)
+        elif name == "rollback":
+            self._rollback_command(arg)
         else:
             self._console.print(f"未知命令 /{name}，输入 /help 查看可用命令", style=_TOOL_STYLE)
 
@@ -786,6 +816,98 @@ class ChatApp:
             return
         target.write_text(_render_agents_md(self._config.ROOT_DIR), encoding="utf-8")
         self._console.print(f"已生成 {target}", style=_OK_STYLE)
+
+    # ---------- 自动 git ----------
+
+    def _auto_git_start(self) -> None:
+        """会话启动：若启用 RP_AUTO_GIT，自动在 ROOT_DIR 初始化 git 仓库。"""
+        if not self._config.AUTO_GIT:
+            return
+        if not ensure_repo(self._config.ROOT_DIR):
+            self._git_ready = False
+            self._print_tool_line("git: 自动初始化仓库失败（将跳过自动提交与检查点）")
+            return
+        self._git_ready = True
+        self._print_tool_line("git: 工作区仓库已就绪，每轮对话后自动提交（/checkpoints 查看）")
+
+    def _auto_commit(self) -> None:
+        """每轮对话结束后提交当前工作区改动（未启用或无改动时跳过）。"""
+        if not self._git_ready or not self._config.AUTO_GIT:
+            return
+        summary = self._last_user_summary()
+        round_no = self._round_number()
+        message = f"rp: 第 {round_no} 轮对话"
+        if summary:
+            message += f" - {summary}"
+        if commit_changes(
+            self._config.ROOT_DIR, message, kind="round", round_no=round_no
+        ):
+            self._print_tool_line("git: 已提交本轮改动")
+
+    def _round_number(self) -> int:
+        """当前已完成（或正在完成）的对话轮次。"""
+        return sum(1 for message in self._messages if message["role"] == "assistant")
+
+    def _last_user_summary(self) -> str:
+        """最近一条用户消息的摘要（用于提交信息），无则返回空串。"""
+        for message in reversed(self._messages):
+            if message["role"] == "user":
+                return " ".join(str(message["content"]).split())[:40]
+        return ""
+
+    # ---------- 检查点与回滚 ----------
+
+    def _checkpoints_command(self, ref: str | None) -> None:
+        """查看提交检查点；/checkpoints <hash> 可直接发起回滚。"""
+        if not self._git_ready:
+            self._console.print(
+                "自动 git 未启用（RP_AUTO_GIT=0 或仓库初始化失败）", style=_TOOL_STYLE
+            )
+            return
+        if ref:
+            self._confirm_rollback(ref)
+            return
+        entries = self._checkpoint_store.list()
+        if not entries:
+            self._console.print("暂无检查点（还没有任何提交）", style=_DIM_STYLE)
+            return
+        items = [(e["hash"], f"{e['short']}  {e['message']}") for e in entries]
+        if not self._console.is_terminal:
+            lines = [("", f"  {label}") for _, label in items]
+            lines.append(("class:cmd-hint", "输入 /rollback <hash> 回滚到指定检查点"))
+            self._command_display = ("提交检查点", lines)
+            return
+        self._open_picker(
+            "检查点（↑↓ 选择 · Enter 确认回滚 · Esc 取消）", items, kind="checkpoints"
+        )
+
+    def _rollback_command(self, ref: str | None) -> None:
+        """回滚到指定提交：/rollback <hash>（git reset --hard）。"""
+        if not self._git_ready:
+            self._console.print(
+                "自动 git 未启用（RP_AUTO_GIT=0 或仓库初始化失败）", style=_TOOL_STYLE
+            )
+            return
+        if not ref:
+            self._console.print("用法：/rollback <hash>（可用 /checkpoints 查看检查点）", style=_TOOL_STYLE)
+            return
+        self._confirm_rollback(ref)
+
+    def _confirm_rollback(self, ref: str) -> None:
+        """发起回滚确认：等待用户输入 y 后执行 git reset --hard。"""
+        self._awaiting_rollback = ref
+        self._console.print(
+            f"⚠ 将执行 git reset --hard {ref}，工作区未提交的改动将丢失。",
+            style=_TOOL_STYLE,
+        )
+        self._console.print("输入 y 确认回滚，其他任意键取消", style=_TOOL_STYLE)
+
+    def _execute_rollback(self, ref: str) -> None:
+        ok, message = rollback_to(self._config.ROOT_DIR, ref)
+        if ok:
+            self._console.print(f"✓ {message}", style=_OK_STYLE)
+        else:
+            self._console.print(f"✖ 回滚失败：{message}", style=_ERROR_STYLE)
 
     # ---------- 会话管理 ----------
 

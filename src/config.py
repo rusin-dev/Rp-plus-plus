@@ -189,6 +189,10 @@ class Config:
     # 会话存储目录
     SESSION_DIR = _get_path("SESSION_DIR", ROOT_DIR / ".rp" / "sessions")
 
+    # 会话自动 git：启动时在 ROOT_DIR 初始化仓库 + 每轮对话后自动提交
+    # （设置 RP_AUTO_GIT=0 可关闭）
+    AUTO_GIT = os.getenv("RP_AUTO_GIT", "1") != "0"
+
     # 终端输出选项
     RICH_COLOR_SYSTEM = os.getenv("RICH_COLOR_SYSTEM", "auto")
     RICH_THEME = os.getenv("RICH_THEME")

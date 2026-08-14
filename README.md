@@ -103,6 +103,30 @@ When input starts with `/`, a command suggestion box appears automatically: use 
 
 Conversations are automatically saved to `.rp/sessions/` (already added to `.gitignore`); on next launch, use `/session` to restore context.
 
+### Auto Git Repository & Commits
+
+When a session starts, rp automatically initializes a git repository in the workspace root (`ROOT_DIR`) if it is not already one, and creates a commit after each completed round of conversation so every round's changes are snapshotted.
+
+- On first initialization, a safe `.gitignore` is written (only when none exists) to keep secrets and runtime artifacts — such as `.env`, `.rp/`, `log/` — out of version control, followed by an initial baseline commit.
+- After each round (including interrupted or errored ones), all workspace changes are staged and committed with a message like `rp: 第 N 轮对话 - <summary>`. Empty commits are never created.
+- Commits only happen when something actually changed; if git is unavailable or a command fails, it is logged and silently skipped — the conversation is never affected.
+- Set `RP_AUTO_GIT=0` in `.env` to disable this feature.
+
+#### Checkpoints & Rollback
+
+Every commit rp creates (initial baseline, per-round, task branches, merges) is recorded with its full hash into `.rp/checkpoints.json`:
+
+- `/checkpoints` opens a visual checkpoint picker (or lists them in non-terminal mode); `/checkpoints <hash>` or `/rollback <hash>` targets a specific commit directly.
+- After selecting a checkpoint, rp asks for confirmation, then executes `git reset --hard <hash>` to roll the workspace back to that state. Confirm with `y`, cancel with any other key.
+
+#### Task Branches (Sub-Agent Delegation)
+
+Each task delegated to a sub-agent (via the `delegate` tool) runs on its own branch:
+
+1. rp stashes any uncommitted changes and creates a branch `task/<agent>-<timestamp>` from the current HEAD.
+2. The sub-agent executes on that branch; its work is committed there.
+3. When it finishes, rp shows the change statistics and asks you to review: input `y` to merge the branch back to the main branch (`--no-ff`, then the branch is deleted), or `n` to discard the branch's changes. Any changes stashed before the delegation are restored afterwards.
+
 ### Multi-provider and Models (JSON)
 
 Provider configuration is stored in JSON files rather than environment variables:
@@ -134,6 +158,7 @@ Other settings are still configured in `.env`:
 | `LOG_DIR` | Log directory | `log/` |
 | `LOG_ENCODING` | Log file encoding | `utf-8` |
 | `SESSION_DIR` | Session storage directory | `.rp/sessions/` |
+| `RP_AUTO_GIT` | Auto-initialize a git repo at session start and commit after each round (`1` / `0`) | `1` |
 | `RICH_COLOR_SYSTEM` | Terminal color system (`auto` / `standard` / `256` / `truecolor` / `windows`) | `auto` |
 | `RICH_THEME` | rich theme | none |
 | `TAB_SIZE` | Tab width | `8` |

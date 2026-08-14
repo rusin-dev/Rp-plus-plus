@@ -23,6 +23,8 @@ COMMAND_DESCRIPTIONS: dict[str, str] = {
     "compact": "压缩对话上下文",
     "usage": "查看 token 用量与上下文窗口",
     "init": "在工作区根目录创建 AGENTS.md",
+    "checkpoints": "查看提交检查点；选择后回滚",
+    "rollback": "回滚到指定提交：/rollback <hash>（git reset --hard）",
     "session": "列出已保存会话；/session <id> 恢复指定会话",
     "clear": "清空对话历史",
     "exit": "退出程序",

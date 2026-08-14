@@ -101,6 +101,30 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 
 对话自动保存到 `.rp/sessions/`（已加入 `.gitignore`），下次启动可用 `/session` 恢复上下文。
 
+### 自动 git 仓库与提交
+
+启动会话时，rp 会在工作区根目录（`ROOT_DIR`）自动初始化 git 仓库（若尚未初始化），并在每轮对话结束后自动创建一个提交，把每一轮的改动都留档。
+
+- 首次初始化时会写入一份安全的 `.gitignore`（仅当不存在时），避免 `.env`、`.rp/`、`log/` 等敏感或运行时产物被提交，随后创建初始基线提交。
+- 每轮对话结束后（含被打断或出错的一轮），会把工作区全部改动暂存并提交，提交信息形如 `rp: 第 N 轮对话 - <摘要>`；没有实际改动时不会产生空提交。
+- 若 git 不可用或命令执行失败，只记录日志并静默跳过，绝不影响正常对话。
+- 在 `.env` 中设置 `RP_AUTO_GIT=0` 可关闭该功能。
+
+#### 检查点与回滚
+
+rp 创建的每一个提交（初始基线、每轮提交、任务分支提交、合并提交）都会把完整 hash 记录到 `.rp/checkpoints.json`：
+
+- `/checkpoints` 打开可视化检查点选择器（非终端模式下列出清单）；`/checkpoints <hash>` 或 `/rollback <hash>` 直接指定目标提交。
+- 选中检查点后 rp 会先请求确认，再执行 `git reset --hard <hash>` 把工作区回滚到该状态；输入 `y` 确认，其他任意键取消。
+
+#### 任务分支（子 Agent 委派）
+
+每个委派给子 Agent 的任务（`delegate` 工具）都会在独立分支上执行：
+
+1. rp 先暂存当前未提交的改动，从当前 HEAD 创建分支 `task/<agent>-<时间戳>`。
+2. 子 Agent 在该分支上执行，其改动提交到该分支。
+3. 子 Agent 完成后，rp 展示改动统计并请你审核：输入 `y` 把分支合并回主分支（`--no-ff`，随后删除分支），输入 `n` 放弃该分支的全部改动；委派前暂存的改动会自动恢复。
+
 ### 多供应商与模型（JSON）
 
 供应商配置使用 JSON 文件存储，不再使用环境变量：
@@ -130,6 +154,7 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 | `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`，`auto` 表示 ddg 失败时回退 bing） | `bing` |
 | `LOG_LEVEL` | 日志级别 | `INFO` |
 | `LOG_DIR` | 日志目录 | `log/` |
+| `RP_AUTO_GIT` | 启动时自动初始化 git 仓库并在每轮对话后提交（`1` / `0`） | `1` |
 | `LOG_ENCODING` | 日志文件编码 | `utf-8` |
 | `SESSION_DIR` | 会话存储目录 | `.rp/sessions/` |
 | `RICH_COLOR_SYSTEM` | 终端色彩系统（`auto` / `standard` / `256` / `truecolor` / `windows`） | `auto` |

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,11 @@ from ..api.client import make_client, stream_completion
 from ..api.tools import ToolRegistry
 from ..config import Config
 from ..core.event_bus import Event, EventBus, EventTypes
+from ..core.git_ops import (
+    abort_task_branch,
+    finish_task_branch,
+    setup_task_branch,
+)
 from ..core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -132,8 +138,24 @@ class AgentRegistry:
 SUBAGENT_RESULT_MAX_CHARS = 8000
 
 
+def _bus_ask(bus: EventBus, timeout: float | None = None) -> Callable[[str], str]:
+    """构造一个通过事件总线向用户提问并等待回答的 ask 函数。"""
+
+    def ask(question: str) -> str:
+        bus.publish(Event(EventTypes.ASK_QUESTION, question))
+        reply = bus.await_event(EventTypes.USER_ANSWER, timeout=timeout)
+        return str(reply.data)
+
+    return ask
+
+
 class SubAgentRunner:
-    """在独立上下文中运行一个子 Agent，返回其最终回复。"""
+    """在独立上下文中运行一个子 Agent，返回其最终回复。
+
+    启用自动 git（Config.AUTO_GIT）时，委派任务会先创建独立任务分支执行，
+    子 Agent 完成后向用户展示改动统计并请求审核：批准则合并回主分支，
+    否则丢弃该分支的改动。
+    """
 
     def __init__(
         self,
@@ -151,7 +173,7 @@ class SubAgentRunner:
         self._task = task
         self._context = context
 
-    def run(self) -> str:
+    def run(self, ask: Callable[[str], str] | None = None) -> str:
         mode = self._config.ACTIVE_MODE
         system_prompt = self._subagent.prompt
         instructions = self._config.mode_instructions(mode)
@@ -173,6 +195,13 @@ class SubAgentRunner:
         )
         client = make_client(self._config)
         last_text = ""
+        branch_ctx: dict | None = None
+        if self._config.AUTO_GIT:
+            try:
+                branch_ctx = setup_task_branch(self._config.ROOT_DIR, agent_id)
+            except Exception:
+                logger.debug("任务分支创建失败，子 Agent 将在主分支直接执行", exc_info=True)
+                branch_ctx = None
         try:
             while True:
                 made, text = stream_completion(
@@ -190,6 +219,7 @@ class SubAgentRunner:
                     break
         except Exception as exc:
             logger.exception("子 Agent %s 执行失败", agent_id)
+            abort_task_branch(self._config.ROOT_DIR, branch_ctx)
             self._bus.publish(
                 Event(
                     EventTypes.SUBAGENT_ERROR,
@@ -206,4 +236,16 @@ class SubAgentRunner:
                 {"agent_id": agent_id, "result": result},
             )
         )
+        if branch_ctx is not None:
+            ask_fn = ask if ask is not None else _bus_ask(self._bus)
+            try:
+                finish_task_branch(self._config.ROOT_DIR, branch_ctx, agent_id, ask_fn)
+            except Exception as exc:
+                logger.exception("任务分支审核/合并流程失败")
+                self._bus.publish(
+                    Event(
+                        EventTypes.SUBAGENT_ERROR,
+                        {"agent_id": agent_id, "error": f"分支审核/合并失败: {exc}"},
+                    )
+                )
         return result

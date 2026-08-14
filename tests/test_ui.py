@@ -1150,3 +1150,105 @@ def test_subagent_tool_events_render_in_scroll(monkeypatch):
         )
     )
     assert app._subagent_mode == "scroll"
+
+
+# ---------- 检查点与回滚 ----------
+
+
+def _checkpoint_app(monkeypatch, tmp_path):
+    from src.core.git_ops import CheckpointStore
+
+    app, bus = _make_app(monkeypatch)
+    app._git_ready = True
+    store = CheckpointStore(tmp_path)
+    store.record("a" * 40, "rp: 第 1 轮对话 - 登录模块", kind="round", round_no=1)
+    store.record("b" * 40, "rp: 第 2 轮对话 - 用户系统", kind="round", round_no=2)
+    app._checkpoint_store = store
+    return app, bus
+
+
+def test_command_checkpoints_not_ready(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    output = _run_command_capture(app, "/checkpoints")
+    assert "未启用" in output
+
+
+def test_command_checkpoints_lists_in_non_terminal(monkeypatch, tmp_path):
+    app, bus = _checkpoint_app(monkeypatch, tmp_path)
+    app._run_command("/checkpoints")
+    assert app._command_display is not None
+    title, lines = app._command_display
+    assert title == "提交检查点"
+    text = " ".join(part for _, part in lines)
+    assert "第 2 轮对话" in text
+    assert "/rollback" in text
+
+
+def test_command_checkpoints_opens_picker_in_terminal(monkeypatch, tmp_path):
+    from rich.console import Console
+
+    app, bus = _checkpoint_app(monkeypatch, tmp_path)
+    app._console = Console(force_terminal=True, width=100)
+    app._run_command("/checkpoints")
+    assert app._picker_mode == "menu"
+    assert app._picker_kind == "checkpoints"
+    assert app._picker_items[0][0] == "b" * 40
+    assert "第 2 轮对话" in app._picker_items[0][1]
+
+
+def test_command_checkpoints_confirm_rollback(monkeypatch, tmp_path):
+    from rich.console import Console
+
+    app, bus = _checkpoint_app(monkeypatch, tmp_path)
+    app._console = Console(force_terminal=True, width=100)
+    calls = []
+    monkeypatch.setattr(
+        "src.ui.app.rollback_to",
+        lambda root, ref: calls.append(ref) or (True, "已回滚"),
+    )
+    app._run_command("/checkpoints")
+    app._picker_confirm()
+    assert app._consume_picker_pending() is True
+    assert app._awaiting_rollback == "b" * 40
+    app._handle_input_text("y", echo=False)
+    assert calls == ["b" * 40]
+    assert app._awaiting_rollback is None
+
+
+def test_command_checkpoints_cancel_rollback(monkeypatch, tmp_path):
+    from rich.console import Console
+
+    app, bus = _checkpoint_app(monkeypatch, tmp_path)
+    app._console = Console(force_terminal=True, width=100)
+    monkeypatch.setattr("src.ui.app.rollback_to", lambda root, ref: (True, "不应执行"))
+    app._run_command("/checkpoints")
+    app._picker_confirm()
+    app._consume_picker_pending()
+    app._handle_input_text("n", echo=False)
+    assert app._awaiting_rollback is None
+
+
+def test_command_rollback_requires_hash(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._git_ready = True
+    output = _run_command_capture(app, "/rollback")
+    assert "用法" in output
+
+
+def test_command_rollback_not_ready(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    output = _run_command_capture(app, "/rollback abc")
+    assert "未启用" in output
+
+
+def test_command_rollback_direct_with_confirm(monkeypatch, tmp_path):
+    app, bus = _checkpoint_app(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        "src.ui.app.rollback_to",
+        lambda root, ref: calls.append(ref) or (True, "已回滚到 abc"),
+    )
+    app._run_command("/rollback abc1234")
+    assert app._awaiting_rollback == "abc1234"
+    app._handle_input_text("y", echo=False)
+    assert calls == ["abc1234"]
