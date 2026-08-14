@@ -84,7 +84,9 @@ class SubAgentPanel:
         lines = content.splitlines()
         if len(lines) > _WRITE_PREVIEW_LINES:
             lines = lines[:_WRITE_PREVIEW_LINES]
-            lines.append(f"…（共 {len(content.splitlines())} 行，仅预览前 {_WRITE_PREVIEW_LINES} 行）")
+            lines.append(
+                f"…（共 {len(content.splitlines())} 行，仅预览前 {_WRITE_PREVIEW_LINES} 行）"
+            )
         self._append("写入了：" + data.get("path", ""))
         self._append("\n".join(lines))
 

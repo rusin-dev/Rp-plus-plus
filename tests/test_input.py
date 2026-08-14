@@ -146,5 +146,7 @@ def test_ctrl_c_binding_without_callback_does_not_exit():
 
     kb = build_key_bindings()
     ctrl_c = next(b for b in kb.bindings if "c-c" in b.keys)
-    event = SimpleNamespace(app=SimpleNamespace(invalidate=lambda: None, exit=lambda exception=None: None))
+    event = SimpleNamespace(
+        app=SimpleNamespace(invalidate=lambda: None, exit=lambda exception=None: None)
+    )
     ctrl_c.handler(event)  # type: ignore[arg-type]

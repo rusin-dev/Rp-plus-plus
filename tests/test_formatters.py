@@ -23,7 +23,9 @@ def test_edit_hides_strings_inline():
 
 
 def test_shell_command_positional():
-    assert format_tool_call("shell", '{"command": "pip install rich"}') == 'shell("pip install rich")'
+    assert (
+        format_tool_call("shell", '{"command": "pip install rich"}') == 'shell("pip install rich")'
+    )
 
 
 def test_grep_pattern_and_path():

@@ -35,13 +35,20 @@ def _setup(tmp_path, monkeypatch, preset_names=("deepseek", "openai")):
     monkeypatch.setattr(Config, "PROVIDER_DIR", tmp_path / "providers")
     monkeypatch.setattr(Config, "RUNTIME_STATE_FILE", tmp_path / "state" / "config.json")
     for name in preset_names:
-        _write_provider(tmp_path, name, "", f"https://{name}.example.com", ["m1", "m2"], "m1", "preset")
+        _write_provider(
+            tmp_path, name, "", f"https://{name}.example.com", ["m1", "m2"], "m1", "preset"
+        )
 
 
 def test_providers_parses_named_providers(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
     _write_provider(
-        tmp_path, "deepseek", "k1", "https://api.deepseek.com", ["deepseek-chat", "deepseek-reasoner"], "deepseek-chat"
+        tmp_path,
+        "deepseek",
+        "k1",
+        "https://api.deepseek.com",
+        ["deepseek-chat", "deepseek-reasoner"],
+        "deepseek-chat",
     )
     _write_provider(tmp_path, "openai", "k2", "https://api.openai.com/v1", ["gpt-4o"], "")
     providers = Config.providers()

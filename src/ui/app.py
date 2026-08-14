@@ -604,7 +604,8 @@ class ChatApp:
                 index = len(items) - 1
         if not self._console.is_terminal:
             lines = [
-                ("", f"  {'▸' if i == index else ' '} {label}") for i, (_, label) in enumerate(items)
+                ("", f"  {'▸' if i == index else ' '} {label}")
+                for i, (_, label) in enumerate(items)
             ]
             lines.append(("class:cmd-hint", "输入 /connect <名称> 使用预设或切换"))
             self._command_display = ("可用供应商", lines)

@@ -149,9 +149,7 @@ def _write_file(
         target.write_text(new_text, encoding="utf-8")
         if state is not None:
             state.add(str(target))
-        bus.publish(
-            Event(EventTypes.FILE_WRITTEN, {"path": str(target), "content": new_text})
-        )
+        bus.publish(Event(EventTypes.FILE_WRITTEN, {"path": str(target), "content": new_text}))
         return (
             f"已写入 {target}（区间替换第 {start}~{end} 行，"
             f"共 {len(new_text.encode('utf-8'))} 字节）"
@@ -162,9 +160,7 @@ def _write_file(
     target.write_text(content, encoding="utf-8")
     if state is not None:
         state.add(str(target))
-    bus.publish(
-        Event(EventTypes.FILE_WRITTEN, {"path": str(target), "content": content})
-    )
+    bus.publish(Event(EventTypes.FILE_WRITTEN, {"path": str(target), "content": content}))
     return f"已写入 {target}（{len(content.encode('utf-8'))} 字节）"
 
 

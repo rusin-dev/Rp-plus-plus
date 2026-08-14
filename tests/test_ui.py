@@ -168,9 +168,7 @@ def test_file_diff_renders_git_style(monkeypatch):
     diff = "--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-x\n+y\n"
     try:
         with app._console.capture() as capture:
-            app._handle(
-                Event(EventTypes.FILE_DIFF, {"path": "src/a.py", "diff": diff})
-            )
+            app._handle(Event(EventTypes.FILE_DIFF, {"path": "src/a.py", "diff": diff}))
         output = capture.get()
     finally:
         app._console = original
@@ -591,7 +589,14 @@ def test_command_models_switches_model(monkeypatch, tmp_path):
     assert Config.ACTIVE_MODEL == "reasoner"
 
 
-def _setup_preset(tmp_path, monkeypatch, name="deepseek", api_url="https://api.deepseek.com", models="chat,reasoner", default="chat"):
+def _setup_preset(
+    tmp_path,
+    monkeypatch,
+    name="deepseek",
+    api_url="https://api.deepseek.com",
+    models="chat,reasoner",
+    default="chat",
+):
     import json
 
     preset_dir = tmp_path / "preset"

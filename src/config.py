@@ -9,9 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _FROZEN = (
-    bool(getattr(sys, "frozen", False))
-    or "__compiled__" in globals()
-    or hasattr(sys, "_MEIPASS")
+    bool(getattr(sys, "frozen", False)) or "__compiled__" in globals() or hasattr(sys, "_MEIPASS")
 )
 
 
@@ -413,9 +411,7 @@ class Config:
         """运行时校验关键配置，未配置时抛出明确的错误信息。"""
         provider = cls.active_provider()
         if provider is None:
-            raise ValueError(
-                "未配置任何 API provider，请运行 /connect 使用预设并输入 API Key"
-            )
+            raise ValueError("未配置任何 API provider，请运行 /connect 使用预设并输入 API Key")
         if not provider.api_key:
             raise ValueError(
                 f"缺少 {provider.name} 的 API key（{provider.config_file}），"
@@ -424,9 +420,7 @@ class Config:
         if not provider.api_url.startswith(("http://", "https://")):
             raise ValueError(f"非法的 API 地址: {provider.api_url}")
         if not provider.default_model and not provider.models:
-            raise ValueError(
-                f"provider {provider.name} 未配置任何模型（{provider.config_file}）"
-            )
+            raise ValueError(f"provider {provider.name} 未配置任何模型（{provider.config_file}）")
 
 
 Config.load_runtime_state()

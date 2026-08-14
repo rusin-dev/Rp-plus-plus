@@ -76,7 +76,7 @@ def format_grep_status(result: str) -> str:
     成功返回匹配数量（不变色），失败返回错误信息（由调用方标红）。
     """
     if result.startswith("error:"):
-        return f"✖ {result[len('error:'):].strip()}"
+        return f"✖ {result[len('error:') :].strip()}"
     if result == "无匹配":
         return "无匹配"
     if result.startswith("匹配结果过多"):

@@ -66,9 +66,9 @@ def test_build_args_for_nuitka():
 def test_build_args_data_spec_targets_src_data():
     from scripts.build_exe import build_args
 
-    data_spec = next(
-        a for a in build_args() if a.startswith("--include-data-dir=")
-    ).removeprefix("--include-data-dir=")
+    data_spec = next(a for a in build_args() if a.startswith("--include-data-dir=")).removeprefix(
+        "--include-data-dir="
+    )
     source, target = data_spec.split("=")
     assert Path(source).is_dir()
     assert target == "src/data"

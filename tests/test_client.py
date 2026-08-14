@@ -39,7 +39,9 @@ def _provider(
     )
 
 
-def _use_provider(monkeypatch, name="test", api_key="test-key", api_url="https://api.example.com/v1"):
+def _use_provider(
+    monkeypatch, name="test", api_key="test-key", api_url="https://api.example.com/v1"
+):
     provider = _provider(name=name, api_key=api_key, api_url=api_url)
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", name)
     monkeypatch.setattr(Config, "providers", lambda: {name: provider})
