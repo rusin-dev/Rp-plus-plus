@@ -75,20 +75,30 @@ jobs:
     if: ${{ !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
 
-      - name: Generate checksums
-        working-directory: release-assets
-        run: sha256sum * > SHA256SUMS
+      - name: Package binaries with src/data
+        run: |
+          mkdir -p release-package/src
+          cp -r src/data release-package/src/data
+          cp release-assets/* release-package/
+          (cd release-package && zip -r "../rp-${GITHUB_REF_NAME}.zip" .)
+
+      - name: Generate checksum
+        run: sha256sum "rp-${GITHUB_REF_NAME}.zip" > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
+          files: |
+            rp-*.zip
+            SHA256SUMS
 
   release-preview:
     name: Create Pre-release (source only)
