@@ -1,113 +1,117 @@
 # rp++
 
-你的编程副驾驶（Your Programming Co-Pilot）
+<div align="center">
+<img src="https://github.com/rusin-dev/Rp-plus-plus/blob/master/image.png">
+</div>
 
-## 简介
+[简体中文](https://github.com/rusin-dev/Rp-plus-plus/blob/master/.docs/README.zh.md)
 
-这是一个基于 Python 的命令行 AI 编程助手。它通过系统提示词（Prompt）约束模型扮演 Project Pilot（资深项目工程师）的角色，将模糊的用户意图转化为清晰的执行蓝图，支持流式输出、交互式对话、终端内 Markdown 实时渲染（基于 rich）、多供应商切换、会话恢复与子 Agent 领域委派。
+## Introduction
 
-## 快速开始
+This is a Python-based command-line AI coding assistant. It uses system prompts to constrain the model to play the role of Project Pilot (a senior project engineer), turning vague user intent into a clear execution blueprint. It supports streaming output, interactive conversation, live in-terminal Markdown rendering, multi-provider switching, session recovery, and sub-agent domain delegation.
+
+## Quick Start
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone git@gitee.com:mian-dev/rp--your-programming-co-pilot.git
 cd rp--your-programming-co-pilot
 
-# 创建并激活虚拟环境
+# Create and activate a virtual environment
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
 # Linux/macOS
 # source .venv/bin/activate
 
-# 安装依赖
+# Install dependencies
 pip install -r requirements.txt
 
-# （可选）以可执行命令方式安装
+# (Optional) Install as an executable command
 pip install -e .
 
-# 配置 API 密钥
+# Configure the API key
 cp .env.example .env
-# 编辑 .env，填入非供应商设置（日志等）
-# 供应商配置使用 JSON：运行 rp 后输入 /connect 选择预设并输入 API Key
-#   （详见下方「多供应商与模型」）
+# Edit .env and fill in non-provider settings (logging, etc.)
+# Provider configuration uses JSON: run rp, enter /connect to pick a preset and enter your API key
+#   (see "Multi-provider and Models" below)
 ```
 
-安装完成后，即可使用 `rp` 命令（等价于 `python -m src.main`）。
+Once installed, use the `rp` command (equivalent to `python -m src.main`).
 
-## 使用
+## Usage
 
 ```bash
-# 单次提问
-python -m src.main -m "帮我设计一个用户登录模块"
+# Single question
+python -m src.main -m "Help me design a user login module"
 
-# 进入交互模式（输入 exit/quit/q 退出）
+# Enter interactive mode (type exit/quit/q to quit)
 python -m src.main
 
-# 指定其他提示词文件
+# Specify a different prompt file
 python -m src.main -p SYSTEM_PROMPT.md -l general
 
-# 以指定工作模式启动（plan / build / auto）
-python -m src.main -M plan -m "帮我设计一个用户登录模块"
+# Start in a specific working mode (plan / build / auto)
+python -m src.main -M plan -m "Help me design a user login module"
 
-# 查看可用的提示词文件
+# List available prompt files
 python -m src.main --list-prompts
 ```
 
-### 工作模式
+### Working Modes
 
-| 模式 | 说明 |
+| Mode | Description |
 | --- | --- |
-| `plan` | 仅规划，不修改任何文件（防御性禁用 `shell` / `write` / `edit` 工具） |
-| `build` | 直接实现需求 |
-| `auto` | 自动规划并实现（默认） |
+| `plan` | Planning only, no file modification (defensively disables the `shell` / `write` / `edit` tools) |
+| `build` | Implement the requirements directly |
+| `auto` | Automatically plan and implement (default) |
 
-- 交互模式中输入 `/mode` 查看/切换，或按 `Shift+Tab` 循环切换；
-- 命令行可用 `-M/--mode <模式>` 指定启动模式。
+- In interactive mode, enter `/mode` to view/switch, or press `Shift+Tab` to cycle;
+- On the command line, use `-M/--mode <mode>` to specify the startup mode.
 
-### 子 Agent（领域委派）
+### Sub-Agents (Domain Delegation)
 
-Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域专长任务：
+Project Pilot has 5 built-in sub-agents, automatically delegated domain-specific tasks via the `delegate` tool:
 
-| 子 Agent | 职责 |
+| Sub-Agent | Responsibility |
 | --- | --- |
-| `librarian` | 知识检索与资料整理 |
-| `frontend_builder` | 前端代码实现 |
-| `backend_builder` | 后端代码实现 |
-| `ui_ux_designer` | UI/UX 方案设计 |
-| `reviewer` | 代码评审与质量把关 |
+| `librarian` | Knowledge retrieval and material organization |
+| `frontend_builder` | Frontend code implementation |
+| `backend_builder` | Backend code implementation |
+| `ui_ux_designer` | UI/UX design |
+| `reviewer` | Code review and quality assurance |
 
-每个子 Agent 拥有独立提示词（`src/data/agents/`，frontmatter 声明角色描述与工具白名单）与独立的 LLM 调用循环，执行过程在终端实时展示，支持鼠标点击折叠。子 Agent 不向用户提问，也不再次委派。
+Each sub-agent has its own prompt (`src/data/agents/`, with frontmatter declaring the role description and tool allowlist) and an independent LLM invocation loop. Execution is displayed live in the terminal, with mouse-click collapsible panels. Sub-agents neither ask the user questions nor delegate again.
 
-### 斜杠命令（交互模式）
+### Slash Commands (Interactive Mode)
 
-输入以 `/` 开头时，会自动弹出命令候选框：可用 `↑/↓` 或 `Tab` 切换候选，`Enter` 确认，`Esc` 关闭。也可直接输入完整命令回车执行。
+When input starts with `/`, a command suggestion box appears automatically: use `↑/↓` or `Tab` to switch candidates, `Enter` to confirm, and `Esc` to close. You can also type the full command and press Enter to run it.
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `/help` | 显示所有可用命令 |
-| `/variants` | 查看/切换思考强度（`fast` / `default` / `deep`） |
-| `/models` | 列出当前供应商的可用模型；`/models <名称>` 切换 |
-| `/connect` | 列出已配置的供应商；`/connect <名称>` 切换 |
-| `/mode` | 查看/切换工作模式（`plan` / `build` / `auto`） |
-| `/compact` | 压缩对话上下文（保留最近 20 条，可用 `/compact <n>` 指定） |
-| `/usage` | 查看 token 用量与上下文窗口占用 |
-| `/init` | 在工作区根目录生成 `AGENTS.md`（`/init -f` 覆盖已有文件） |
-| `/session` | 列出已保存的会话；`/session <id>` 恢复指定会话继续对话 |
-| `/clear` | 清空对话历史 |
-| `/exit` / `/quit` | 退出 |
+| `/help` | Show all available commands |
+| `/variants` | View/switch thinking intensity (`fast` / `default` / `deep`) |
+| `/models` | List the current provider's available models; `/models <name>` switches |
+| `/connect` | List configured providers; `/connect <name>` switches |
+| `/mode` | View/switch working mode (`plan` / `build` / `auto`) |
+| `/compact` | Compact the conversation context (keeps the last 20 messages; `/compact <n>` to specify) |
+| `/usage` | View token usage and context window occupancy |
+| `/init` | Generate `AGENTS.md` in the workspace root (`/init -f` overwrites an existing file) |
+| `/session` | List saved sessions; `/session <id>` resumes the specified session and continues the conversation |
+| `/clear` | Clear conversation history |
+| `/exit` / `/quit` | Quit |
 
-对话自动保存到 `.rp/sessions/`（已加入 `.gitignore`），下次启动可用 `/session` 恢复上下文。
+Conversations are automatically saved to `.rp/sessions/` (already added to `.gitignore`); on next launch, use `/session` to restore context.
 
-### 多供应商与模型（JSON）
+### Multi-provider and Models (JSON)
 
-供应商配置使用 JSON 文件存储，不再使用环境变量：
+Provider configuration is stored in JSON files rather than environment variables:
 
-- **预设模板**：`src/data/providers/preset/<名称>.json`，只含 `api_url` / `models` / `default_model`，不含 API Key，随项目分发。
-- **使用预设**：运行 `rp` 后输入 `/connect`，底部固定区域会展示可用供应商列表，用 `↑ ↓` 切换、`Enter` 确认，随后提示输入 API Key，程序自动生成 `src/data/providers/<名称>.json`（预设元信息 + `api_key`）并切换。
-- **当前选中**：`/connect`、`/models` 切换的 provider/model 会持久化到 `.rp/config.json`，下次启动自动恢复。
+- **Preset templates**: `src/data/providers/preset/<name>.json`, containing only `api_url` / `models` / `default_model` (no API key), distributed with the project.
+- **Using a preset**: run `rp`, then enter `/connect`. The fixed bottom area shows the list of available providers; use `↑ ↓` to switch and `Enter` to confirm, then you are prompted to enter the API key. The program automatically generates `src/data/providers/<name>.json` (preset metadata + `api_key`) and switches to it.
+- **Current selection**: the provider/model selected via `/connect` and `/models` is persisted to `.rp/config.json` and restored automatically on next launch.
 
-手动创建 `src/data/providers/<名称>.json` 示例：
+Example of manually creating `src/data/providers/<name>.json`:
 
 ```json
 {
@@ -119,100 +123,100 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 }
 ```
 
-其余设置仍在 `.env` 中配置：
+Other settings are still configured in `.env`:
 
-| 变量 | 说明 | 默认值 |
+| Variable | Description | Default |
 | --- | --- | --- |
-| `RP_VARIANT` | 思考强度（`fast` / `default` / `deep`） | `default` |
-| `RP_MODE` | 工作模式（`plan` / `build` / `auto`） | `auto` |
-| `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`，`auto` 表示 ddg 失败时回退 bing） | `bing` |
-| `LOG_LEVEL` | 日志级别 | `INFO` |
-| `LOG_DIR` | 日志目录 | `log/` |
-| `LOG_ENCODING` | 日志文件编码 | `utf-8` |
-| `SESSION_DIR` | 会话存储目录 | `.rp/sessions/` |
-| `RICH_COLOR_SYSTEM` | 终端色彩系统（`auto` / `standard` / `256` / `truecolor` / `windows`） | `auto` |
-| `RICH_THEME` | rich 主题 | 无 |
-| `TAB_SIZE` | 制表符宽度 | `8` |
+| `RP_VARIANT` | Thinking intensity (`fast` / `default` / `deep`) | `default` |
+| `RP_MODE` | Working mode (`plan` / `build` / `auto`) | `auto` |
+| `SEARCH_BACKEND` | Web search backend (`bing` / `ddg` / `auto`; `auto` falls back to bing when ddg fails) | `bing` |
+| `LOG_LEVEL` | Log level | `INFO` |
+| `LOG_DIR` | Log directory | `log/` |
+| `LOG_ENCODING` | Log file encoding | `utf-8` |
+| `SESSION_DIR` | Session storage directory | `.rp/sessions/` |
+| `RICH_COLOR_SYSTEM` | Terminal color system (`auto` / `standard` / `256` / `truecolor` / `windows`) | `auto` |
+| `RICH_THEME` | rich theme | none |
+| `TAB_SIZE` | Tab width | `8` |
 
-## 目录结构
+## Directory Structure
 
-项目采用三层架构：`core`（基础设施）→ `api`（能力）→ `ui`（表现）。
+The project uses a three-layer architecture: `core` (infrastructure) → `api` (capabilities) → `ui` (presentation).
 
 ```
 src/
-├── main.py              # 入口：组装三层并启动
-├── config.py            # 配置与校验（JSON 供应商预设 / 模式 / 变体）
-├── core/                # 基础设施层
-│   ├── logger.py        # 日志（文件 + 控制台）
-│   ├── event_bus.py     # 事件总线（线程间通信）
-│   ├── prompt.py        # 提示词加载
-│   └── session.py       # 会话持久化（JSON 存储 / 加载 / 恢复）
-├── api/                 # 能力层
-│   ├── client.py        # OpenAI 客户端（后台线程 + 工具调用循环）
-│   ├── agents.py        # 子 Agent 定义加载与独立运行循环
-│   └── tools.py         # 工具定义（schema）与执行器
-├── ui/                  # 表现层
-│   ├── app.py           # rich TUI（Live 渲染 + 事件消费 + 会话恢复）
-│   ├── input.py         # 输入框（斜杠命令补全 / 模式徽标 / 键位绑定）
-│   ├── cancel_watcher.py# 后台监听连按两次 ESC，触发 CANCEL 事件以中断当前回答
-│   ├── formatters.py    # 工具调用参数压缩为可读 name(参数) 展示文本
-│   ├── mascot.py        # 启动吉祥物
-│   └── subagent_panel.py# 子 Agent 执行面板（实时展示 / 折叠）
-├── data/general/        # 系统提示词
-├── data/agents/         # 子 Agent 提示词（frontmatter 声明角色与工具权限）
-├── data/providers/preset/ # 供应商预设模板（JSON，不含 API Key）
-└── data/providers/      # 使用预设后生成的供应商配置（含 API Key）
+├── main.py              # Entry point: assembles the three layers and starts
+├── config.py            # Configuration and validation (JSON provider presets / mode / variant)
+├── core/                # Infrastructure layer
+│   ├── logger.py        # Logging (file + console)
+│   ├── event_bus.py     # Event bus (inter-thread communication)
+│   ├── prompt.py        # Prompt loading
+│   └── session.py       # Session persistence (JSON save / load / restore)
+├── api/                 # Capability layer
+│   ├── client.py        # OpenAI client (background thread + tool invocation loop)
+│   ├── agents.py        # Sub-agent definition loading and independent run loop
+│   └── tools.py         # Tool definitions (schemas) and executors
+├── ui/                  # Presentation layer
+│   ├── app.py           # rich TUI (Live rendering + event consumption + session recovery)
+│   ├── input.py         # Input box (slash command completion / mode badge / key bindings)
+│   ├── cancel_watcher.py# Background listener for double-ESC, triggers a CANCEL event to interrupt the current answer
+│   ├── formatters.py    # Compresses tool call arguments into readable name(args) display text
+│   ├── mascot.py        # Startup mascot
+│   └── subagent_panel.py# Sub-agent execution panel (live display / collapsible)
+├── data/general/        # System prompts
+├── data/agents/         # Sub-agent prompts (frontmatter declares roles and tool permissions)
+├── data/providers/preset/ # Provider preset templates (JSON, no API key)
+└── data/providers/      # Provider configs generated after using presets (contains API key)
 scripts/
-├── build_exe.py         # Nuitka 一键编译单文件可执行程序
-└── launcher.py          # 打包入口（转发到 src.main:main）
-tests/                   # pytest 测试（core / api / ui / agents / session 等）
-.github/workflows/       # GitHub Actions：CI / Format / Release / Snapshot / Auto Merge
-pyproject.toml           # 项目元数据、ruff 与 pytest 配置、`rp` 命令入口
-cost_map.json            # 主流模型价格参考（元 / 1M tokens）
+├── build_exe.py         # One-click Nuitka compilation of a single-file executable
+└── launcher.py          # Packaging entry point (forwards to src.main:main)
+tests/                   # pytest tests (core / api / ui / agents / session, etc.)
+.github/workflows/       # GitHub Actions: CI / Format / Release / Snapshot / Auto Merge
+pyproject.toml           # Project metadata, ruff and pytest config, `rp` command entry point
+cost_map.json            # Reference pricing for mainstream models (CNY / 1M tokens)
 ```
 
-### 三层职责
+### Layer Responsibilities
 
-| 层 | 职责 | 依赖 |
+| Layer | Responsibility | Dependencies |
 | --- | --- | --- |
-| `core` | 日志、线程间通信（事件总线）、提示词加载、会话持久化 | 仅标准库 + config |
-| `api` | OpenAI 请求、流式输出、工具定义与执行、子 Agent 运行 | core |
-| `ui` | rich TUI：渲染消息、输入交互、子 Agent 面板、消费事件 | core + api |
+| `core` | Logging, inter-thread communication (event bus), prompt loading, session persistence | Standard library + config only |
+| `api` | OpenAI requests, streaming output, tool definition and execution, sub-agent running | core |
+| `ui` | rich TUI: rendering messages, input interaction, sub-agent panels, consuming events | core + api |
 
-内置工具：`ask`（向用户提问，经事件总线交互）、`read`（读工作区文件）、`write`（写工作区文件，写入内容以代码框预览）、`edit`（对已存在文件做精确替换，修改以 git 风格 diff 展示）、`grep`（正则搜索）、`shell`（执行命令）、`web_search`（网页搜索，默认 Bing，可用 `SEARCH_BACKEND` 切换）、`web_fetch`（抓取网页内容）、`delegate`（把领域专长任务委派给子 Agent）。工具调用参数在终端以可读形式展示，不再显示原始 JSON。读写工具默认锚定工作区根目录，防止越界访问。
+Built-in tools: `ask` (ask the user a question, via the event bus), `read` (read a workspace file), `write` (write a workspace file, content previewed in a code box), `edit` (precise replacement in an existing file, changes shown as a git-style diff), `grep` (regular-expression search), `shell` (execute commands), `web_search` (web search, Bing by default, switchable via `SEARCH_BACKEND`), `web_fetch` (fetch web page content), `delegate` (delegate domain-specific tasks to a sub-agent). Tool call arguments are displayed in a readable form in the terminal instead of raw JSON. Read/write tools are anchored to the workspace root by default to prevent out-of-bounds access.
 
-通信模型：UI 主线程负责渲染与输入；API 请求在后台线程执行，通过 `EventBus` 发布 token / 工具调用 / 子 Agent 事件 / 错误等事件，UI 消费事件实时更新界面。工具 `ask` 依赖总线反向向 UI 提问并等待用户回答，形成完整闭环。
+Communication model: the UI main thread handles rendering and input; API requests run on a background thread and publish token / tool call / sub-agent event / error events via the `EventBus`, which the UI consumes to update the interface in real time. The `ask` tool uses the bus to ask the UI a question and wait for the user's answer, forming a complete closed loop.
 
-## 开发
+## Development
 
 ```bash
 pip install -r requirements-dev.txt
-ruff check .            # 代码检查
-ruff format .           # 代码格式化
-pytest                  # 运行测试（CI 覆盖 Python 3.10 ~ 3.13）
+ruff check .            # Lint
+ruff format .           # Format
+pytest                  # Run tests (CI covers Python 3.10 ~ 3.13)
 ```
 
-## 打包发布
+## Packaging & Release
 
-使用 [Nuitka](https://nuitka.net/) 将项目编译为单文件可执行程序（不跨平台，需在目标系统上分别构建）：
+Use [Nuitka](https://nuitka.net/) to compile the project into a single-file executable (not cross-platform; build separately on each target system):
 
 ```bash
-# 完整构建（产物在 dist/ 下：Windows -> rp.exe，Linux/macOS -> rp）
+# Full build (output in dist/: Windows -> rp.exe, Linux/macOS -> rp)
 python scripts/build_exe.py
 
-# 仅预览将要执行的 Nuitka 命令
+# Preview the Nuitka command that would run
 python scripts/build_exe.py --dry-run
 ```
 
-GitHub Actions 内置 `Release` / `Snapshot` 工作流：
+GitHub Actions includes `Release` / `Snapshot` workflows:
 
-- `Release`：推送 `v*` 标签触发，先跑测试，再在 Windows / Linux / macOS 三平台用 Nuitka 构建，随后把三平台二进制与 `src/data` 一起打包为 `rp-<标签>.zip` 并生成 `SHA256SUMS` 校验文件，最终创建 GitHub Release；带 `-alpha` / `-beta` 的标签只发布源码快照 pre-release，不构建二进制。
-- `Snapshot`：每周一自动（或手动）创建 `snapshot-YYMMDD` 源码 pre-release。
+- `Release`: triggered by pushing a `v*` tag. It runs tests first, then builds with Nuitka on Windows / Linux / macOS, packs the three platform binaries together with `src/data` into `rp-<tag>.zip`, generates a `SHA256SUMS` checksum file, and finally creates a GitHub Release. Tags with `-alpha` / `-beta` only publish a source snapshot pre-release and do not build binaries.
+- `Snapshot`: automatically (or manually) creates a `snapshot-YYMMDD` source pre-release every Monday.
 
-## 贡献
+## Contributing
 
-欢迎提交 Issue 与 Pull Request，详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## 许可证
+## License
 
-本项目采用 [MIT License](LICENSE)。
+This project is licensed under the [MIT License](LICENSE).
