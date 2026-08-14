@@ -1,4 +1,4 @@
-# rp--your-programming-co-pilot
+# rp++
 
 你的编程副驾驶（Your Programming Co-Pilot）
 
