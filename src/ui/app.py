@@ -12,11 +12,10 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import AnyFormattedText
+from prompt_toolkit.formatted_text import AnyFormattedText, StyleAndTextTuples
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.text import Text
 
 from ..api.client import ChatClient
@@ -103,6 +102,7 @@ class ChatApp:
         self._last_tool_name: str | None = None
         self._last_subagent_tool: str | None = None
         self._exit_armed = False
+        self._command_display: tuple[str, list[tuple[str, str]]] | None = None
 
     # ---------- 主循环 ----------
 
@@ -363,7 +363,21 @@ class ChatApp:
         ]
 
     def _bottom_toolbar(self) -> AnyFormattedText:
-        """底部状态栏（类 Claude Code）：左侧模式/Ctrl-C 提示，右侧模型/供应商。"""
+        """底部状态栏（类 Claude Code）：命令显示内容 + 左侧模式/Ctrl-C 提示 + 右侧模型/供应商。"""
+        fragments: StyleAndTextTuples = []
+        display = self._command_display
+        if display is not None:
+            title, lines = display
+            width = self._console.width or 80
+            head = f"── {title} "
+            fragments.append(("class:cmd-title", head))
+            fragments.append(("class:cmd-rule", "─" * max(width - len(head), 0)))
+            fragments.append(("", "\n"))
+            for style, text in lines:
+                fragments.append((style, text))
+                fragments.append(("", "\n"))
+            fragments.append(("class:cmd-rule", "─" * width))
+            fragments.append(("", "\n"))
         if self._exit_armed:
             left = "Press Ctrl-C again to exit"
         else:
@@ -373,11 +387,10 @@ class ChatApp:
             right = f"{self._config.active_model()} · {provider}"
         else:
             right = "未配置 · 运行 /connect"
-        return [
-            ("class:status-left", left),
-            ("", "    "),
-            ("class:status-right", right),
-        ]
+        fragments.append(("class:status-left", left))
+        fragments.append(("", "    "))
+        fragments.append(("class:status-right", right))
+        return fragments
 
     def _primary_interrupt(self) -> bool:
         """处理 Ctrl-C：第一次进入待退出状态，第二次返回 True 表示退出。"""
@@ -442,6 +455,7 @@ class ChatApp:
     # ---------- 斜杠命令 ----------
 
     def _run_command(self, raw: str) -> None:
+        self._command_display = None
         parts = raw[1:].strip().split()
         name = parts[0].lower() if parts else ""
         arg = parts[1] if len(parts) > 1 else None
@@ -472,8 +486,8 @@ class ChatApp:
             self._console.print(f"未知命令 /{name}，输入 /help 查看可用命令", style=_TOOL_STYLE)
 
     def _show_help(self) -> None:
-        lines = [f"  /{name}  -  {desc}" for name, desc in COMMAND_DESCRIPTIONS.items()]
-        self._console.print(Panel("\n".join(lines), title="可用命令", border_style=_TOOL_STYLE))
+        lines = [("", f"  /{name}  -  {desc}") for name, desc in COMMAND_DESCRIPTIONS.items()]
+        self._command_display = ("可用命令", lines)
 
     # ---------- 供应商 / 模型 / 思考强度 ----------
 
@@ -501,11 +515,9 @@ class ChatApp:
         lines = []
         for provider in providers.values():
             marker = "▸" if provider.name == self._config.ACTIVE_PROVIDER else " "
-            lines.append(f"  {marker} {provider.name}  -  {provider.api_url}")
-        self._console.print(
-            Panel("\n".join(lines), title="已配置的供应商", border_style=_TOOL_STYLE)
-        )
-        self._console.print("输入 /connect <名称> 切换", style=_DIM_STYLE)
+            lines.append(("", f"  {marker} {provider.name}  -  {provider.api_url}"))
+        lines.append(("class:cmd-hint", "输入 /connect <名称> 切换"))
+        self._command_display = ("已配置的供应商", lines)
 
     def _models_command(self, model: str | None) -> None:
         provider = self._config.active_provider()
@@ -531,15 +543,9 @@ class ChatApp:
         lines = []
         for candidate in provider.models:
             marker = "▸" if candidate == current else " "
-            lines.append(f"  {marker} {candidate}")
-        self._console.print(
-            Panel(
-                "\n".join(lines),
-                title=f"可用模型（{provider.name}）",
-                border_style=_TOOL_STYLE,
-            )
-        )
-        self._console.print("输入 /models <名称> 切换", style=_DIM_STYLE)
+            lines.append(("", f"  {marker} {candidate}"))
+        lines.append(("class:cmd-hint", "输入 /models <名称> 切换"))
+        self._command_display = (f"可用模型（{provider.name}）", lines)
 
     def _variants_command(self, variant: str | None) -> None:
         if variant:
@@ -553,9 +559,9 @@ class ChatApp:
         lines = []
         for name, desc in self._config.variant_descriptions().items():
             marker = "▸" if name == self._config.ACTIVE_VARIANT else " "
-            lines.append(f"  {marker} {name}  -  {desc}")
-        self._console.print(Panel("\n".join(lines), title="思考强度", border_style=_TOOL_STYLE))
-        self._console.print("输入 /variants <名称> 切换", style=_DIM_STYLE)
+            lines.append(("", f"  {marker} {name}  -  {desc}"))
+        lines.append(("class:cmd-hint", "输入 /variants <名称> 切换"))
+        self._command_display = ("思考强度", lines)
 
     # ---------- 工作模式 ----------
 
@@ -575,9 +581,9 @@ class ChatApp:
         lines = []
         for name, desc in self._config.mode_descriptions().items():
             marker = "▸" if name == self._config.ACTIVE_MODE else " "
-            lines.append(f"  {marker} {name}  -  {desc}")
-        self._console.print(Panel("\n".join(lines), title="工作模式", border_style=_TOOL_STYLE))
-        self._console.print("输入 /mode <名称> 切换", style=_DIM_STYLE)
+            lines.append(("", f"  {marker} {name}  -  {desc}"))
+        lines.append(("class:cmd-hint", "输入 /mode <名称> 切换"))
+        self._command_display = ("工作模式", lines)
 
     # ---------- 上下文压缩 ----------
 
@@ -621,16 +627,16 @@ class ChatApp:
         last_input = usage["last_input_tokens"]
         current_pct = last_input / window * 100 if window else 0.0
         lines = [
-            f"  模型: {model}（{provider_name}）",
-            f"  上下文窗口: {window:,} tokens",
-            f"  当前上下文（最近一次请求输入）: {last_input:,} tokens  ·  {current_pct:.2f}%",
-            "",
-            "  本次会话累计:",
-            f"    - 输入 tokens: {input_tokens:,}",
-            f"    - 输出 tokens: {output_tokens:,}",
-            f"    - 合计: {total:,}  ·  {usage['calls']} 次请求",
+            ("", f"  模型: {model}（{provider_name}）"),
+            ("", f"  上下文窗口: {window:,} tokens"),
+            ("", f"  当前上下文（最近一次请求输入）: {last_input:,} tokens  ·  {current_pct:.2f}%"),
+            ("", ""),
+            ("", "  本次会话累计:"),
+            ("", f"    - 输入 tokens: {input_tokens:,}"),
+            ("", f"    - 输出 tokens: {output_tokens:,}"),
+            ("", f"    - 合计: {total:,}  ·  {usage['calls']} 次请求"),
         ]
-        self._console.print(Panel("\n".join(lines), title="用量统计", border_style=_TOOL_STYLE))
+        self._command_display = ("用量统计", lines)
 
     # ---------- 初始化 AGENTS.md ----------
 
@@ -661,11 +667,14 @@ class ChatApp:
         lines = []
         for session in sessions:
             lines.append(
-                f"  {session.session_id}  ·  {session.updated_at}"
-                f"  ·  {session.message_count} 条  ·  {session.summary}"
+                (
+                    "",
+                    f"  {session.session_id}  ·  {session.updated_at}"
+                    f"  ·  {session.message_count} 条  ·  {session.summary}",
+                )
             )
-        self._console.print(Panel("\n".join(lines), title="已保存的会话", border_style=_TOOL_STYLE))
-        self._console.print("输入 /session <id> 恢复指定会话", style=_DIM_STYLE)
+        lines.append(("class:cmd-hint", "输入 /session <id> 恢复指定会话"))
+        self._command_display = ("已保存的会话", lines)
 
     def _resume_session(self, session_id: str) -> None:
         session = self._session_store.load(session_id)
@@ -820,6 +829,7 @@ class ChatApp:
 
     def _submit(self, user_message: str, echo: bool = True) -> None:
         assert self._client is not None, "ChatApp 需要有效的 ChatClient"
+        self._command_display = None
         if echo:
             self._console.print(f"❯ {user_message}", style=_USER_STYLE)
         self._messages.append({"role": "user", "content": user_message})

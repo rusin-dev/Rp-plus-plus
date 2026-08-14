@@ -413,10 +413,14 @@ def _run_command_capture(app, command: str) -> str:
 
 def test_command_help_lists_commands(monkeypatch):
     app, bus = _make_app(monkeypatch)
-    output = _run_command_capture(app, "/help")
-    assert "/session" in output
-    assert "/clear" in output
-    assert "/exit" in output
+    app._run_command("/help")
+    assert app._command_display is not None
+    title, lines = app._command_display
+    assert title == "可用命令"
+    text = " ".join(part for _, part in lines)
+    assert "/session" in text
+    assert "/clear" in text
+    assert "/exit" in text
 
 
 def test_command_session_empty(monkeypatch, tmp_path):
@@ -436,8 +440,10 @@ def test_command_session_lists_and_resumes(monkeypatch, tmp_path):
     ]
     app._save_session()
 
-    output = _run_command_capture(app, "/session")
-    assert "设计一个模块" in output
+    app._run_command("/session")
+    assert app._command_display is not None
+    text = " ".join(part for _, part in app._command_display[1])
+    assert "设计一个模块" in text
 
     app._messages = []
     assert app._session is not None
@@ -508,9 +514,11 @@ def test_command_variants_lists_and_switches(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ACTIVE_VARIANT", "default")
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
-    output = _run_command_capture(app, "/variants")
-    assert "fast" in output
-    assert "deep" in output
+    app._run_command("/variants")
+    assert app._command_display is not None
+    text = " ".join(part for _, part in app._command_display[1])
+    assert "fast" in text
+    assert "deep" in text
     app._run_command("/variants deep")
     assert Config.ACTIVE_VARIANT == "deep"
     app._run_command("/variants nope")
@@ -526,9 +534,11 @@ def test_command_connect_switches_provider(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
-    output = _run_command_capture(app, "/connect")
-    assert "deepseek" in output
-    assert "openai" in output
+    app._run_command("/connect")
+    assert app._command_display is not None
+    text = " ".join(part for _, part in app._command_display[1])
+    assert "deepseek" in text
+    assert "openai" in text
     app._run_command("/connect openai")
     assert Config.ACTIVE_PROVIDER == "openai"
     assert Config.CUSTOM_API_KEY == "k2"
@@ -545,9 +555,11 @@ def test_command_models_switches_model(monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "ACTIVE_MODEL", "chat")
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
-    output = _run_command_capture(app, "/models")
-    assert "chat" in output
-    assert "reasoner" in output
+    app._run_command("/models")
+    assert app._command_display is not None
+    text = " ".join(part for _, part in app._command_display[1])
+    assert "chat" in text
+    assert "reasoner" in text
     app._run_command("/models reasoner")
     assert Config.ACTIVE_MODEL == "reasoner"
     app._run_command("/models nope")
@@ -613,11 +625,42 @@ def test_command_usage_shows_stats(monkeypatch, tmp_path):
 
     app, bus = _make_app(monkeypatch)
     app._client = _UsageClient()  # type: ignore[assignment]
-    output = _run_command_capture(app, "/usage")
-    assert "上下文窗口" in output
-    assert "输入" in output
-    assert "1,000" in output
-    assert "3 次请求" in output
+    app._run_command("/usage")
+    assert app._command_display is not None
+    title, lines = app._command_display
+    assert title == "用量统计"
+    text = " ".join(part for _, part in lines)
+    assert "上下文窗口" in text
+    assert "输入" in text
+    assert "1,000" in text
+    assert "3 次请求" in text
+
+
+def test_command_display_renders_in_toolbar(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+    app._command_display = ("可用命令", [("", "  /help  -  x")])
+    plain = to_plain_text(app._bottom_toolbar())
+    assert "可用命令" in plain
+    assert "/help" in plain
+
+
+def test_command_display_cleared_before_new_command(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._run_command("/help")
+    assert app._command_display is not None
+    app._run_command("/clear")
+    assert app._command_display is None
+
+
+def test_command_display_cleared_on_new_message(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._command_display = ("可用命令", [("", "x")])
+    client = _FakeClient()
+    app._client = client  # type: ignore[assignment]
+    app._submit("hello", echo=False)
+    assert app._command_display is None
 
 
 # ---------- 流式回复 Markdown 渲染 ----------
@@ -874,6 +917,8 @@ def test_bottom_toolbar_shows_mode_and_model(monkeypatch):
 
     app, bus = _make_app(monkeypatch)
     monkeypatch.setattr(Config, "ACTIVE_MODE", "build")
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", "deepseek-chat")
     toolbar = app._bottom_toolbar()
     plain = to_plain_text(toolbar)
     assert "build mode on" in plain

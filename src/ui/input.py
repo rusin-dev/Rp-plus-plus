@@ -37,6 +37,9 @@ INPUT_STYLE = Style.from_dict(
         "command-text": "bold blue",
         "status-left": "bold",
         "status-right": "dim",
+        "cmd-title": "bold cyan",
+        "cmd-rule": "dim",
+        "cmd-hint": "italic dim",
     }
 )
 
