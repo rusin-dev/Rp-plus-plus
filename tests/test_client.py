@@ -143,6 +143,26 @@ def test_client_recreated_on_provider_change(monkeypatch):
     assert client._ensure_client() is second
 
 
+def test_client_constructed_without_provider(monkeypatch):
+    """未配置任何 provider 时，ChatClient 仍可创建，但不建立底层 OpenAI 客户端。"""
+    monkeypatch.setattr(Config, "providers", lambda: {})
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", None)
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
+    client = ChatClient(Config, EventBus(), ToolRegistry())
+    assert client._client is None
+
+
+def test_ensure_client_builds_after_provider_configured(monkeypatch):
+    monkeypatch.setattr(Config, "providers", lambda: {})
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", None)
+    client = ChatClient(Config, EventBus(), ToolRegistry())
+    assert client._client is None
+    _use_provider(monkeypatch)
+    built = client._ensure_client()
+    assert built is not None
+    assert client._ensure_client() is built
+
+
 def test_stream_passes_variant_extra_body(monkeypatch):
     bus = EventBus()
     _use_provider(monkeypatch)

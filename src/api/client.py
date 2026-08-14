@@ -189,8 +189,11 @@ class ChatClient:
         self._bus = bus
         self._tools = tools or ToolRegistry()
         api_key, base_url = self._client_credentials()
-        self._client = make_client(config)
-        self._client_params = (api_key, base_url)
+        self._client: OpenAI | None = None
+        self._client_params: tuple[str, str] | None = None
+        if api_key:
+            self._client = make_client(config)
+            self._client_params = (api_key, base_url)
         self._usage = {
             "input_tokens": 0,
             "output_tokens": 0,

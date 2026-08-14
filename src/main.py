@@ -54,7 +54,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _reconfigure_stdio() -> None:
+    """Windows 下将 stdout/stderr 切到 UTF-8，避免 ✖/→/❯ 等字符在 GBK 控制台输出失败。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            logger.debug("无法重设 stdio 编码", exc_info=True)
+
+
 def main(argv: list[str] | None = None) -> int:
+    _reconfigure_stdio()
     args = build_parser().parse_args(argv)
 
     if args.list_prompts:
@@ -68,7 +81,6 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         system_prompt = get_prompt(args.prompt, args.level)
-        Config.validate()
     except (FileNotFoundError, ValueError) as exc:
         console.print(f"[red]错误:[/red] {exc}")
         return 1
