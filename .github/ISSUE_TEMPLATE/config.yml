@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 📖 贡献指南
+  - name: 📖 贡献指南 (CONTRIBUTING guide)
     url: https://gitee.com/mian-dev/rp--your-programming-co-pilot
-    about: 提交 Issue 或 PR 前，请先阅读仓库内的 CONTRIBUTING.md
+    about: 提交 Issue 或 PR 前，请先阅读仓库内的 CONTRIBUTING.md (Please read CONTRIBUTING.md before submitting Issues & PR)
