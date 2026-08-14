@@ -4,7 +4,7 @@
 
 ## 简介
 
-这是一个基于 Python 的命令行 AI 编程助手。它通过系统提示词（Prompt）约束模型扮演"项目飞行员（Project Pilot）"的角色，将模糊的用户意图转化为清晰的执行蓝图，支持流式输出、交互式对话、终端内 Markdown 实时渲染（基于 rich）、多供应商切换、会话恢复与子 Agent 领域委派。
+这是一个基于 Python 的命令行 AI 编程助手。它通过系统提示词（Prompt）约束模型扮演 Project Pilot（资深项目工程师）的角色，将模糊的用户意图转化为清晰的执行蓝图，支持流式输出、交互式对话、终端内 Markdown 实时渲染（基于 rich）、多供应商切换、会话恢复与子 Agent 领域委派。
 
 ## 快速开始
 
@@ -58,7 +58,7 @@ python -m src.main --list-prompts
 
 | 模式 | 说明 |
 | --- | --- |
-| `plan` | 仅规划，不修改任何文件（防御性禁用 `shell` / `write` 工具） |
+| `plan` | 仅规划，不修改任何文件（防御性禁用 `shell` / `write` / `edit` 工具） |
 | `build` | 直接实现需求 |
 | `auto` | 自动规划并实现（默认） |
 
@@ -113,8 +113,8 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 {
     "name": "deepseek",
     "api_url": "https://api.deepseek.com/v1",
-    "models": ["deepseek-chat", "deepseek-reasoner"],
-    "default_model": "deepseek-chat",
+    "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+    "default_model": "deepseek-v4-flash",
     "api_key": "sk-xxx"
 }
 ```
@@ -128,6 +128,7 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 | `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`，`auto` 表示 ddg 失败时回退 bing） | `bing` |
 | `LOG_LEVEL` | 日志级别 | `INFO` |
 | `LOG_DIR` | 日志目录 | `log/` |
+| `LOG_ENCODING` | 日志文件编码 | `utf-8` |
 | `SESSION_DIR` | 会话存储目录 | `.rp/sessions/` |
 | `RICH_COLOR_SYSTEM` | 终端色彩系统（`auto` / `standard` / `256` / `truecolor` / `windows`） | `auto` |
 | `RICH_THEME` | rich 主题 | 无 |
@@ -167,7 +168,7 @@ scripts/
 tests/                   # pytest 测试（core / api / ui / agents / session 等）
 .github/workflows/       # GitHub Actions：CI / Format / Release / Snapshot / Auto Merge
 pyproject.toml           # 项目元数据、ruff 与 pytest 配置、`rp` 命令入口
-cost_map.json            # 主流模型价格参考（元 / 1M tokens，供 /usage 成本估算）
+cost_map.json            # 主流模型价格参考（元 / 1M tokens）
 ```
 
 ### 三层职责
@@ -203,7 +204,10 @@ python scripts/build_exe.py
 python scripts/build_exe.py --dry-run
 ```
 
-GitHub Actions 已内置 `Release` / `Snapshot` 工作流，可在打 tag 或定时任务时自动构建 Windows / Linux / macOS 三平台产物并发布。
+GitHub Actions 内置 `Release` / `Snapshot` 工作流：
+
+- `Release`：推送 `v*` 标签触发，先跑测试，再在 Windows / Linux / macOS 三平台用 Nuitka 构建，随后把三平台二进制与 `src/data` 一起打包为 `rp-<标签>.zip` 并生成 `SHA256SUMS` 校验文件，最终创建 GitHub Release；带 `-alpha` / `-beta` 的标签只发布源码快照 pre-release，不构建二进制。
+- `Snapshot`：每周一自动（或手动）创建 `snapshot-YYMMDD` 源码 pre-release。
 
 ## 贡献
 
