@@ -5,4 +5,4 @@ ruff>=0.16.2
 pytest>=9.0
 
 # 构建
-nuitka>=2.0
+nuitka>=4.1.3
