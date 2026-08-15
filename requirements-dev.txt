@@ -1,7 +1,7 @@
 -r requirements.txt
 
 # 质量检查
-ruff>=0.16
+ruff>=0.16.2
 pytest>=9.0
 
 # 构建
