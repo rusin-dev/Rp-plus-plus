@@ -16,7 +16,7 @@ from ..config import Config
 
 COMMAND_DESCRIPTIONS: dict[str, str] = {
     "help": "显示所有可用命令",
-    "variants": "查看/切换思考强度（fast/default/deep）",
+    "variants": "查看/切换思考强度（low/medium/high/max）",
     "models": "查看/切换当前供应商的模型",
     "connect": "查看/切换 API 供应商",
     "mode": "查看/切换工作模式（plan/build/auto）",

@@ -168,7 +168,7 @@ def test_ensure_client_builds_after_provider_configured(monkeypatch):
 def test_stream_passes_variant_extra_body(monkeypatch):
     bus = EventBus()
     _use_provider(monkeypatch)
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "fast")
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "high")
     client = ChatClient(Config, bus, ToolRegistry())
     captured = {}
 
@@ -179,7 +179,7 @@ def test_stream_passes_variant_extra_body(monkeypatch):
     monkeypatch.setattr(client._client.chat.completions, "create", create)
     client._run("hi", "system", [])
     events = bus.drain()
-    assert captured["extra_body"] == {"temperature": 0.9}
+    assert captured["extra_body"] == {"reasoning_effort": "high"}
     assert events[-1].type == EventTypes.ASSISTANT_DONE
 
 

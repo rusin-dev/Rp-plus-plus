@@ -88,7 +88,7 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 | 命令 | 说明 |
 | --- | --- |
 | `/help` | 显示所有可用命令 |
-| `/variants` | 查看/切换思考强度（`fast` / `default` / `deep`） |
+| `/variants` | 查看/切换思考强度（`low` / `medium` / `high` / `max`，以 `reasoning_effort` 传入 API） |
 | `/models` | 列出当前供应商的可用模型；`/models <名称>` 切换 |
 | `/connect` | 列出已配置的供应商；`/connect <名称>` 切换 |
 | `/mode` | 查看/切换工作模式（`plan` / `build` / `auto`） |
@@ -149,7 +149,7 @@ rp 创建的每一个提交（初始基线、每轮提交、任务分支提交�
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `RP_VARIANT` | 思考强度（`fast` / `default` / `deep`） | `default` |
+| `RP_VARIANT` | 思考强度（`low` / `medium` / `high` / `max`） | `medium` |
 | `RP_MODE` | 工作模式（`plan` / `build` / `auto`） | `auto` |
 | `SEARCH_BACKEND` | 网页搜索后端（`bing` / `ddg` / `auto`，`auto` 表示 ddg 失败时回退 bing） | `bing` |
 | `LOG_LEVEL` | 日志级别 | `INFO` |

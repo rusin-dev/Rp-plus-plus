@@ -106,17 +106,20 @@ class Config:
     ACTIVE_PROVIDER: str | None = None
     ACTIVE_MODEL: str | None = None
 
-    # 思考强度（fast / default / deep），运行时可通过 /variants 修改
-    ACTIVE_VARIANT: str = os.getenv("RP_VARIANT", "default")
+    # 思考强度（low / medium / high / max），运行时可通过 /variants 修改，
+    # 档位以 reasoning_effort 形式传入实际的 API 调用
+    ACTIVE_VARIANT: str = os.getenv("RP_VARIANT", "medium")
     VARIANT_PARAMS: dict[str, dict] = {
-        "fast": {"temperature": 0.9},
-        "default": {},
-        "deep": {"temperature": 0.1},
+        "low": {"reasoning_effort": "low"},
+        "medium": {"reasoning_effort": "medium"},
+        "high": {"reasoning_effort": "high"},
+        "max": {"reasoning_effort": "max"},
     }
     VARIANT_DESCRIPTIONS: dict[str, str] = {
-        "fast": "快速响应，适合简单任务",
-        "default": "默认平衡模式",
-        "deep": "深度思考，适合复杂任务",
+        "low": "轻度思考，响应最快，适合简单任务",
+        "medium": "默认平衡模式",
+        "high": "深度思考，适合复杂任务",
+        "max": "最高强度思考，适合极复杂任务",
     }
 
     # 工作模式（plan / build / auto），运行时可通过 /mode 修改

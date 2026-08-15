@@ -249,14 +249,14 @@ def test_validate_invalid_url_raises(tmp_path, monkeypatch):
 
 
 def test_variants_and_switching(monkeypatch):
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "default")
-    assert Config.active_variant_params() == {}
-    Config.set_variant("deep")
-    assert Config.ACTIVE_VARIANT == "deep"
-    assert Config.active_variant_params() == {"temperature": 0.1}
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "medium")
+    assert Config.active_variant_params() == {"reasoning_effort": "medium"}
+    Config.set_variant("high")
+    assert Config.ACTIVE_VARIANT == "high"
+    assert Config.active_variant_params() == {"reasoning_effort": "high"}
     with pytest.raises(ValueError):
         Config.set_variant("nope")
-    assert Config.ACTIVE_VARIANT == "deep"
+    assert Config.ACTIVE_VARIANT == "high"
 
 
 def test_context_window_known_model():

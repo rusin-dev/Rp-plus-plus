@@ -528,18 +528,18 @@ def _setup_providers(tmp_path, monkeypatch, specs) -> None:
 
 
 def test_command_variants_lists_and_switches(monkeypatch, tmp_path):
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "default")
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "medium")
     monkeypatch.setattr(Config, "SESSION_DIR", tmp_path / "sessions")
     app, bus = _make_app(monkeypatch)
     app._run_command("/variants")
     assert app._command_display is not None
     text = " ".join(part for _, part in app._command_display[1])
-    assert "fast" in text
-    assert "deep" in text
-    app._run_command("/variants deep")
-    assert Config.ACTIVE_VARIANT == "deep"
+    assert "low" in text
+    assert "max" in text
+    app._run_command("/variants high")
+    assert Config.ACTIVE_VARIANT == "high"
     app._run_command("/variants nope")
-    assert Config.ACTIVE_VARIANT == "deep"
+    assert Config.ACTIVE_VARIANT == "high"
 
 
 def test_command_connect_switches_provider(monkeypatch, tmp_path):

@@ -268,12 +268,12 @@ def _provider_models(monkeypatch, models=("m1", "m2"), default="m1", name="test"
 
 def test_parse_overrides_accepts_valid_values(monkeypatch):
     _provider_models(monkeypatch)
-    data = {"provider": "test", "model": "m2", "variant": "deep", "mode": "plan"}
+    data = {"provider": "test", "model": "m2", "variant": "high", "mode": "plan"}
     overrides = _parse_overrides(data, Path("x.md"))
     assert overrides == {
         "provider": "test",
         "model": "m2",
-        "variant": "deep",
+        "variant": "high",
         "mode": "plan",
     }
 
@@ -324,7 +324,7 @@ def test_load_agents_reads_override_frontmatter(monkeypatch, tmp_path):
         "tools: [read]\n"
         "provider: test\n"
         "model: m2\n"
-        "variant: deep\n"
+        "variant: high\n"
         "mode: plan\n"
         "---\n\n# 角色\n",
         encoding="utf-8",
@@ -334,7 +334,7 @@ def test_load_agents_reads_override_frontmatter(monkeypatch, tmp_path):
     a = agents[0]
     assert a.provider == "test"
     assert a.model == "m2"
-    assert a.variant == "deep"
+    assert a.variant == "high"
     assert a.mode == "plan"
 
 
@@ -353,16 +353,16 @@ def test_load_agents_skips_agent_with_invalid_override(monkeypatch, tmp_path):
 def test_config_override_sets_and_restores(monkeypatch):
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "orig")
     monkeypatch.setattr(Config, "ACTIVE_MODEL", "om")
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "default")
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "medium")
     monkeypatch.setattr(Config, "ACTIVE_MODE", "auto")
-    with _ConfigOverride(provider="new", model="nm", variant="deep", mode="plan"):
+    with _ConfigOverride(provider="new", model="nm", variant="high", mode="plan"):
         assert Config.ACTIVE_PROVIDER == "new"
         assert Config.ACTIVE_MODEL == "nm"
-        assert Config.ACTIVE_VARIANT == "deep"
+        assert Config.ACTIVE_VARIANT == "high"
         assert Config.ACTIVE_MODE == "plan"
     assert Config.ACTIVE_PROVIDER == "orig"
     assert Config.ACTIVE_MODEL == "om"
-    assert Config.ACTIVE_VARIANT == "default"
+    assert Config.ACTIVE_VARIANT == "medium"
     assert Config.ACTIVE_MODE == "auto"
 
 
@@ -378,9 +378,9 @@ def test_config_override_restores_on_exception(monkeypatch):
 
 
 def test_config_override_only_touches_specified_fields(monkeypatch):
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "default")
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "medium")
     with _ConfigOverride(provider="new"):
-        assert Config.ACTIVE_VARIANT == "default"
+        assert Config.ACTIVE_VARIANT == "medium"
 
 
 def test_subagent_runner_applies_overrides_during_run(monkeypatch):
@@ -390,7 +390,7 @@ def test_subagent_runner_applies_overrides_during_run(monkeypatch):
     monkeypatch.setattr(Config, "AUTO_GIT", False)
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "main")
     monkeypatch.setattr(Config, "ACTIVE_MODEL", "main-model")
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "default")
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "medium")
     monkeypatch.setattr(Config, "ACTIVE_MODE", "auto")
     monkeypatch.setattr(
         Config,
@@ -434,7 +434,7 @@ def test_subagent_runner_applies_overrides_during_run(monkeypatch):
         path=Path("x.md"),
         provider="alt",
         model="alt-model",
-        variant="deep",
+        variant="high",
         mode="plan",
     )
     runner = SubAgentRunner(Config, bus, tools, subagent, "task")
@@ -442,12 +442,12 @@ def test_subagent_runner_applies_overrides_during_run(monkeypatch):
     assert runner.run() == "完成"
     assert observed == {
         "model": "alt-model",
-        "variant_params": {"temperature": 0.1},
+        "variant_params": {"reasoning_effort": "high"},
         "mode": "plan",
     }
     assert Config.ACTIVE_PROVIDER == "main"
     assert Config.ACTIVE_MODEL == "main-model"
-    assert Config.ACTIVE_VARIANT == "default"
+    assert Config.ACTIVE_VARIANT == "medium"
     assert Config.ACTIVE_MODE == "auto"
 
 
@@ -458,7 +458,7 @@ def test_subagent_runner_inherits_main_settings_when_no_overrides(monkeypatch):
     monkeypatch.setattr(Config, "AUTO_GIT", False)
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "main")
     monkeypatch.setattr(Config, "ACTIVE_MODEL", "main-model")
-    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "fast")
+    monkeypatch.setattr(Config, "ACTIVE_VARIANT", "high")
     monkeypatch.setattr(Config, "ACTIVE_MODE", "build")
     monkeypatch.setattr(
         Config,
@@ -498,8 +498,8 @@ def test_subagent_runner_inherits_main_settings_when_no_overrides(monkeypatch):
     assert runner.run() == "ok"
     assert observed == {
         "model": "main-model",
-        "variant_params": {"temperature": 0.9},
+        "variant_params": {"reasoning_effort": "high"},
         "mode": "build",
     }
-    assert Config.ACTIVE_VARIANT == "fast"
+    assert Config.ACTIVE_VARIANT == "high"
     assert Config.ACTIVE_MODE == "build"

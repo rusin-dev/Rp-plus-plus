@@ -90,7 +90,7 @@ When input starts with `/`, a command suggestion box appears automatically: use 
 | Command | Description |
 | --- | --- |
 | `/help` | Show all available commands |
-| `/variants` | View/switch thinking intensity (`fast` / `default` / `deep`) |
+| `/variants` | View/switch thinking intensity (`low` / `medium` / `high` / `max`, passed to the API as `reasoning_effort`) |
 | `/models` | List the current provider's available models; `/models <name>` switches |
 | `/connect` | List configured providers; `/connect <name>` switches |
 | `/mode` | View/switch working mode (`plan` / `build` / `auto`) |
@@ -151,7 +151,7 @@ Other settings are still configured in `.env`:
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `RP_VARIANT` | Thinking intensity (`fast` / `default` / `deep`) | `default` |
+| `RP_VARIANT` | Thinking intensity (`low` / `medium` / `high` / `max`) | `medium` |
 | `RP_MODE` | Working mode (`plan` / `build` / `auto`) | `auto` |
 | `SEARCH_BACKEND` | Web search backend (`bing` / `ddg` / `auto`; `auto` falls back to bing when ddg fails) | `bing` |
 | `LOG_LEVEL` | Log level | `INFO` |
