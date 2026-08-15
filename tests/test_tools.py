@@ -409,8 +409,8 @@ def test_execute_web_search_auto_falls_back(monkeypatch):
     registry = ToolRegistry()
     result = registry.execute("web_search", '{"query": "python"}', EventBus())
     assert "Example Page" in result
-    assert any(urlparse(url).hostname == "duckduckgo.com" for url in calls)
-    assert any(urlparse(url).hostname == "bing.com" for url in calls)
+    assert any((urlparse(url).hostname or "").endswith(".duckduckgo.com") for url in calls)
+    assert any((urlparse(url).hostname or "").endswith(".bing.com") for url in calls)
 
 
 def test_execute_web_search_error(monkeypatch):
