@@ -30,7 +30,7 @@ def build_args() -> list[str]:
     data_dir = ROOT / "src" / "data"
     if not data_dir.is_dir():
         raise FileNotFoundError(f"提示词数据目录不存在: {data_dir}")
-    return [
+    cmd = [
         "--onefile",
         "--standalone",
         "--assume-yes-for-downloads",
@@ -39,6 +39,9 @@ def build_args() -> list[str]:
         f"--output-dir={ROOT / 'dist'}",
         str(LAUNCHER),
     ]
+    if sys.platform == "win32":
+        cmd.append("--mingw64")
+    return cmd
 
 
 def _command() -> list[str]:
