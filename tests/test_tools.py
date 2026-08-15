@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from src.api.tools import ToolRegistry
 from src.config import Config
 from src.core.event_bus import Event, EventBus, EventTypes
@@ -407,8 +409,8 @@ def test_execute_web_search_auto_falls_back(monkeypatch):
     registry = ToolRegistry()
     result = registry.execute("web_search", '{"query": "python"}', EventBus())
     assert "Example Page" in result
-    assert any("duckduckgo" in url for url in calls)
-    assert any("bing.com" in url for url in calls)
+    assert any(urlparse(url).hostname == "duckduckgo.com" for url in calls)
+    assert any(urlparse(url).hostname == "bing.com" for url in calls)
 
 
 def test_execute_web_search_error(monkeypatch):
