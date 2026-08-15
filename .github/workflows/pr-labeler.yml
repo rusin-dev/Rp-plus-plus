@@ -2,7 +2,7 @@ name: PR Labeler
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -12,9 +12,23 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-      - name: Label PR
+      - name: Label by file changes
         uses: actions/labeler@v5
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
-          sync-labels: true   # 如果 PR 内容变更后，会自动移除不再匹配的标签
+          sync-labels: true
+
+      - name: Add label for feature PRs
+        if: contains(github.event.pull_request.title, 'feat') || contains(github.event.pull_request.title, 'feature')
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          labels: enhancement
+
+      - name: Add label for bugfix PRs
+        if: contains(github.event.pull_request.title, 'fix') || contains(github.event.pull_request.title, 'bug')
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          labels: bug
