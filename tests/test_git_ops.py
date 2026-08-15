@@ -21,9 +21,7 @@ from src.core.git_ops import (
     stash_push,
 )
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("git") is None, reason="git 不可用，跳过 git 集成测试"
-)
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git 不可用，跳过 git 集成测试")
 
 
 def _run_git(root, *args):
@@ -97,9 +95,9 @@ def test_ensure_repo_upgrades_existing_rp_gitignore(tmp_path):
     assert "src/data/providers/*.json" in content
     # 幂等：再次 ensure 不重复追加
     assert ensure_repo(tmp_path) is True
-    assert content.count("src/data/providers/*.json") == (
-        tmp_path / ".gitignore"
-    ).read_text(encoding="utf-8").count("src/data/providers/*.json")
+    assert content.count("src/data/providers/*.json") == (tmp_path / ".gitignore").read_text(
+        encoding="utf-8"
+    ).count("src/data/providers/*.json")
 
 
 def test_ensure_repo_skips_when_git_missing(tmp_path, monkeypatch):
@@ -260,7 +258,9 @@ def test_stash_push_skips_ignored_provider_configs(tmp_path):
     assert ensure_repo(tmp_path)
     provider = tmp_path / "src" / "data" / "providers" / "deepseek.json"
     provider.parent.mkdir(parents=True, exist_ok=True)
-    provider.write_text('{"api_key": "sk-test", "default_model": "deepseek-v4-flash"}', encoding="utf-8")
+    provider.write_text(
+        '{"api_key": "sk-test", "default_model": "deepseek-v4-flash"}', encoding="utf-8"
+    )
     assert stash_push(tmp_path, "rp: 委派前暂存") is False
     assert provider.exists()
     assert stash_pop(tmp_path) is False

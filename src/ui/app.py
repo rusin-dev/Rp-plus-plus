@@ -839,9 +839,7 @@ class ChatApp:
         message = f"rp: 第 {round_no} 轮对话"
         if summary:
             message += f" - {summary}"
-        if commit_changes(
-            self._config.ROOT_DIR, message, kind="round", round_no=round_no
-        ):
+        if commit_changes(self._config.ROOT_DIR, message, kind="round", round_no=round_no):
             self._print_tool_line("git: 已提交本轮改动")
 
     def _round_number(self) -> int:
@@ -889,7 +887,9 @@ class ChatApp:
             )
             return
         if not ref:
-            self._console.print("用法：/rollback <hash>（可用 /checkpoints 查看检查点）", style=_TOOL_STYLE)
+            self._console.print(
+                "用法：/rollback <hash>（可用 /checkpoints 查看检查点）", style=_TOOL_STYLE
+            )
             return
         self._confirm_rollback(ref)
 

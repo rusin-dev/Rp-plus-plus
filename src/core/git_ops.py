@@ -463,7 +463,9 @@ def finish_task_branch(root: Path, ctx: dict, agent_id: str, ask: Callable[[str]
             merged = merge_branch(root, branch, f"merge: 合并 {agent_id} 任务分支 {branch}")
             delete_branch(root, branch)
             if merged:
-                record_checkpoint(root, merged, f"merge: {agent_id} 任务分支 {branch}", kind="merge")
+                record_checkpoint(
+                    root, merged, f"merge: {agent_id} 任务分支 {branch}", kind="merge"
+                )
                 logger.info("已合并任务分支 %s 回 %s", branch, main_branch)
                 return True
             return False
