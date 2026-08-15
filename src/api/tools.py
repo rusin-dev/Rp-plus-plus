@@ -398,8 +398,8 @@ def _decode_ddg_url(href: str) -> str:
 
 def _html_to_text(html_text: str) -> str:
     """粗略地把 HTML 转为纯文本。"""
-    text = re.sub(r"<script.*?</script>", " ", html_text, flags=re.S | re.I)
-    text = re.sub(r"<style.*?</style>", " ", text, flags=re.S | re.I)
+    text = re.sub(r"<script\b[^>]*>.*?</script\b[^>]*>", " ", html_text, flags=re.S | re.I)
+    text = re.sub(r"<style\b[^>]*>.*?</style\b[^>]*>", " ", text, flags=re.S | re.I)
     return _strip_html_tags(text)
 
 
