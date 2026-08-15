@@ -40,7 +40,7 @@ def build_args() -> list[str]:
         str(LAUNCHER),
     ]
     if sys.platform == "win32":
-        cmd.append("--mingw64")
+        cmd.append("--clang")
     return cmd
 
 
