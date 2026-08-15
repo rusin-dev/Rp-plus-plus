@@ -62,6 +62,7 @@ def test_ensure_repo_initializes(tmp_path):
     gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert ".rp/" in gitignore
     assert ".env" in gitignore
+    assert "src/data/providers/*.json" in gitignore
     assert _log_messages(tmp_path) == ["chore: 初始化 git 仓库（rp 会话启动）"]
 
 
@@ -75,6 +76,30 @@ def test_ensure_repo_keeps_existing_gitignore(tmp_path):
     (tmp_path / ".gitignore").write_text("custom-ignore\n", encoding="utf-8")
     assert ensure_repo(tmp_path) is True
     assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == "custom-ignore\n"
+
+
+def test_ensure_repo_upgrades_existing_rp_gitignore(tmp_path):
+    """旧版 rp 自动生成的 .gitignore 缺少 provider 忽略规则时，应幂等补齐。"""
+    from src.core.git_ops import _AUTO_GITIGNORE
+
+    old_lines = [
+        line
+        for line in _AUTO_GITIGNORE.splitlines()
+        if line.strip() != "src/data/providers/*.json"
+        and not line.strip().startswith(("# 生成的供应商配置", "# （否则委派子 Agent"))
+    ]
+    (tmp_path / ".gitignore").write_text("\n".join(old_lines) + "\n", encoding="utf-8")
+    _run_git(tmp_path, "init")
+    _run_git(tmp_path, "add", ".gitignore")
+    _run_git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init")
+    assert ensure_repo(tmp_path) is True
+    content = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert "src/data/providers/*.json" in content
+    # 幂等：再次 ensure 不重复追加
+    assert ensure_repo(tmp_path) is True
+    assert content.count("src/data/providers/*.json") == (
+        tmp_path / ".gitignore"
+    ).read_text(encoding="utf-8").count("src/data/providers/*.json")
 
 
 def test_ensure_repo_skips_when_git_missing(tmp_path, monkeypatch):
@@ -226,6 +251,30 @@ def test_stash_roundtrip(tmp_path):
     assert has_changes(tmp_path) is False
     assert stash_pop(tmp_path) is True
     assert has_changes(tmp_path) is True
+
+
+def test_stash_push_skips_ignored_provider_configs(tmp_path):
+    """回归：含 API Key 的 provider 配置（src/data/providers/*.json）即使未提交，
+    也不能被 git stash push -u 移出工作区——否则委派子 Agent 时 provider 解析为空、
+    模型名变成空串，API 直接报 400 "you passed ."。"""
+    assert ensure_repo(tmp_path)
+    provider = tmp_path / "src" / "data" / "providers" / "deepseek.json"
+    provider.parent.mkdir(parents=True, exist_ok=True)
+    provider.write_text('{"api_key": "sk-test", "default_model": "deepseek-v4-flash"}', encoding="utf-8")
+    assert stash_push(tmp_path, "rp: 委派前暂存") is False
+    assert provider.exists()
+    assert stash_pop(tmp_path) is False
+
+
+def test_commit_changes_skips_provider_configs(tmp_path):
+    """provider 配置（含 API Key）不应被自动提交进版本库。"""
+    assert ensure_repo(tmp_path)
+    provider = tmp_path / "src" / "data" / "providers" / "deepseek.json"
+    provider.parent.mkdir(parents=True, exist_ok=True)
+    provider.write_text('{"api_key": "sk-test"}', encoding="utf-8")
+    assert commit_changes(tmp_path, "rp: 第 1 轮对话 - x") is None
+    assert provider.exists()
+    assert len(_log_messages(tmp_path)) == 1
 
 
 def test_setup_task_branch_creates_branch(tmp_path):

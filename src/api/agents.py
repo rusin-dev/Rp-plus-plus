@@ -49,6 +49,104 @@ class SubAgent:
     tools: list[str]
     prompt: str
     path: Path
+    provider: str | None = None
+    model: str | None = None
+    variant: str | None = None
+    mode: str | None = None
+
+
+class _ConfigOverride:
+    """在 with 块内临时覆盖 Config 的活动设置，退出时（含异常）恢复原值。
+
+    任何参数为 None 则该字段保持不动。
+    """
+
+    _FIELDS = ("ACTIVE_PROVIDER", "ACTIVE_MODEL", "ACTIVE_VARIANT", "ACTIVE_MODE")
+
+    def __init__(
+        self,
+        provider: str | None = None,
+        model: str | None = None,
+        variant: str | None = None,
+        mode: str | None = None,
+    ) -> None:
+        self._overrides = {
+            "ACTIVE_PROVIDER": provider,
+            "ACTIVE_MODEL": model,
+            "ACTIVE_VARIANT": variant,
+            "ACTIVE_MODE": mode,
+        }
+        self._saved: dict[str, object] = {}
+
+    def __enter__(self) -> _ConfigOverride:
+        for key, value in self._overrides.items():
+            if value is not None:
+                self._saved[key] = getattr(Config, key)
+                setattr(Config, key, value)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        for key, original in self._saved.items():
+            setattr(Config, key, original)
+        self._saved.clear()
+
+
+def _parse_overrides(data: dict[str, str], path: Path) -> dict[str, str | None]:
+    """校验并规范化 frontmatter 中的可选覆盖字段。
+
+    返回 {"provider": ..., "model": ..., "variant": ..., "mode": ...}，
+    任何字段未提供时为 None。校验失败抛 ValueError，错误信息带文件名。
+    """
+    result: dict[str, str | None] = {
+        "provider": None,
+        "model": None,
+        "variant": None,
+        "mode": None,
+    }
+
+    raw_provider = data.get("provider")
+    if raw_provider is not None:
+        provider_name = raw_provider.strip().lower()
+        provider = Config.providers().get(provider_name)
+        if provider is None:
+            available = ", ".join(Config.providers()) or "（无）"
+            raise ValueError(f"{path.name}: provider '{raw_provider}' 未配置，可用：{available}")
+        result["provider"] = provider.name
+
+    raw_model = data.get("model")
+    if raw_model is not None:
+        provider_name = result["provider"]
+        if provider_name is None:
+            active = Config.active_provider()
+            provider_name = active.name if active is not None else None
+        provider = Config.providers().get(provider_name) if provider_name else None
+        if provider is None:
+            raise ValueError(f"{path.name}: model '{raw_model}' 缺少对应的 provider 配置")
+        if raw_model not in provider.models:
+            raise ValueError(
+                f"{path.name}: model '{raw_model}' 不在 {provider.name} 的可用列表："
+                f"{', '.join(provider.models) or '（空）'}"
+            )
+        result["model"] = raw_model
+
+    raw_variant = data.get("variant")
+    if raw_variant is not None:
+        if raw_variant not in Config.VARIANT_PARAMS:
+            raise ValueError(
+                f"{path.name}: variant '{raw_variant}' 不在已知列表："
+                f"{', '.join(Config.VARIANT_PARAMS)}"
+            )
+        result["variant"] = raw_variant
+
+    raw_mode = data.get("mode")
+    if raw_mode is not None:
+        if raw_mode not in Config.MODES:
+            raise ValueError(
+                f"{path.name}: mode '{raw_mode}' 不在已知列表：{', '.join(Config.MODES)}"
+            )
+        result["mode"] = raw_mode
+
+    return result
 
 
 def _parse_frontmatter(text: str, path: Path) -> tuple[dict[str, str], str]:
@@ -105,6 +203,7 @@ def load_agents() -> list[SubAgent]:
                 raise ValueError(f"{path.name}: 缺少字段 {', '.join(sorted(missing))}")
             if not body:
                 raise ValueError(f"{path.name}: 缺少提示词正文")
+            overrides = _parse_overrides(data, path)
             agents.append(
                 SubAgent(
                     name=data["name"],
@@ -112,6 +211,10 @@ def load_agents() -> list[SubAgent]:
                     tools=_parse_tools(data["tools"], path),
                     prompt=body,
                     path=path,
+                    provider=overrides["provider"],
+                    model=overrides["model"],
+                    variant=overrides["variant"],
+                    mode=overrides["mode"],
                 )
             )
         except (OSError, ValueError) as exc:
@@ -174,7 +277,7 @@ class SubAgentRunner:
         self._context = context
 
     def run(self, ask: Callable[[str], str] | None = None) -> str:
-        mode = self._config.ACTIVE_MODE
+        mode = self._subagent.mode or self._config.ACTIVE_MODE
         system_prompt = self._subagent.prompt
         instructions = self._config.mode_instructions(mode)
         if instructions:
@@ -187,13 +290,6 @@ class SubAgentRunner:
             ChatCompletionUserMessageParam(role="user", content=user_content),
         ]
         agent_id = self._subagent.name
-        self._bus.publish(
-            Event(
-                EventTypes.SUBAGENT_START,
-                {"agent_id": agent_id, "task": self._task},
-            )
-        )
-        client = make_client(self._config)
         last_text = ""
         branch_ctx: dict | None = None
         if self._config.AUTO_GIT:
@@ -203,20 +299,48 @@ class SubAgentRunner:
                 logger.debug("任务分支创建失败，子 Agent 将在主分支直接执行", exc_info=True)
                 branch_ctx = None
         try:
-            while True:
-                made, text = stream_completion(
-                    self._config,
-                    self._bus,
-                    client,
-                    self._tools,
-                    messages,
-                    mode,
-                    agent_id=agent_id,
+            with _ConfigOverride(
+                provider=self._subagent.provider,
+                model=self._subagent.model,
+                variant=self._subagent.variant,
+            ):
+                model = self._config.active_model()
+                if not model:
+                    # 模型名为空时（如 provider 配置缺失、或配置被 git stash 移出工作区），
+                    # 直接给出明确错误，避免向 API 发送空模型名（会得到 400 "you passed ."）。
+                    message = (
+                        f"子 Agent {agent_id} 无法执行：未解析到有效的 API 模型"
+                        "（provider 配置缺失或模型名为空，请检查 src/data/providers/ 配置）"
+                    )
+                    logger.error("%s", message)
+                    self._bus.publish(
+                        Event(
+                            EventTypes.SUBAGENT_ERROR,
+                            {"agent_id": agent_id, "error": message},
+                        )
+                    )
+                    return f"error: {message}"
+                self._bus.publish(
+                    Event(
+                        EventTypes.SUBAGENT_START,
+                        {"agent_id": agent_id, "task": self._task},
+                    )
                 )
-                if text:
-                    last_text = text
-                if not made:
-                    break
+                client = make_client(self._config)
+                while True:
+                    made, text = stream_completion(
+                        self._config,
+                        self._bus,
+                        client,
+                        self._tools,
+                        messages,
+                        mode,
+                        agent_id=agent_id,
+                    )
+                    if text:
+                        last_text = text
+                    if not made:
+                        break
         except Exception as exc:
             logger.exception("子 Agent %s 执行失败", agent_id)
             abort_task_branch(self._config.ROOT_DIR, branch_ctx)

@@ -55,6 +55,19 @@ build/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 生成的供应商配置（含 API Key）：禁止被提交，也不能被 git stash 移出工作区
+# （否则委派子 Agent 时 provider 配置会被 stash 带走，导致 API 请求模型名为空）
+src/data/providers/*.json
+"""
+
+# rp 自动生成的 .gitignore 的起始标记，用于识别该文件是否为 rp 所写（用户自建的不动）
+_RP_GITIGNORE_MARKER = "# 由 rp Co-Pilot 自动生成：会话初始化 git 仓库时的安全忽略规则"
+
+# 后续新增的安全忽略规则；旧版 rp 生成的 .gitignore 缺这些规则时会被幂等补齐
+_RP_EXTRA_IGNORES = """\
+# 生成的供应商配置（含 API Key）：禁止被提交，也不能被 git stash 移出工作区
+src/data/providers/*.json
 """
 
 _INITIAL_COMMIT_MESSAGE = "chore: 初始化 git 仓库（rp 会话启动）"
@@ -217,6 +230,7 @@ def ensure_repo(root: Path) -> bool:
         _write_safety_gitignore(root)
         _ensure_local_identity(root)
         _initial_commit(root)
+    _ensure_rp_ignore_rules(root)
     return True
 
 
@@ -285,6 +299,39 @@ def _write_safety_gitignore(root: Path) -> None:
         logger.info("已生成安全 .gitignore（%s）", gitignore)
     except OSError:
         logger.debug("写入 .gitignore 失败", exc_info=True)
+
+
+def _ensure_rp_ignore_rules(root: Path) -> None:
+    """为 rp 自动生成的 .gitignore 补齐缺失的安全规则（幂等）。
+
+    旧版本自动生成的 .gitignore 可能缺少新增加的安全忽略项（如 provider 配置），
+    导致这些含 API Key 的文件被 git add 提交、或被委派任务分支前的
+    `git stash push -u` 移出工作区。这里只更新带 rp 生成标记的 .gitignore，
+    用户自建的 .gitignore 一律不修改。
+    """
+    gitignore = root / ".gitignore"
+    if not gitignore.is_file():
+        return
+    try:
+        content = gitignore.read_text(encoding="utf-8")
+    except OSError:
+        logger.debug("读取 .gitignore 失败", exc_info=True)
+        return
+    if _RP_GITIGNORE_MARKER not in content:
+        return
+    existing_lines = {line.strip() for line in content.splitlines()}
+    missing = [
+        line.strip()
+        for line in _RP_EXTRA_IGNORES.splitlines()
+        if line.strip() and not line.strip().startswith("#") and line.strip() not in existing_lines
+    ]
+    if not missing:
+        return
+    try:
+        gitignore.write_text(content.rstrip() + "\n\n" + _RP_EXTRA_IGNORES, encoding="utf-8")
+        logger.info("已为 .gitignore 补齐 rp 安全忽略规则：%s", ", ".join(missing))
+    except OSError:
+        logger.debug("更新 .gitignore 失败", exc_info=True)
 
 
 def _ensure_local_identity(root: Path) -> None:
