@@ -1,13 +1,16 @@
-"""一键编译脚本：用 Nuitka 把项目打包为单文件可执行程序。
+"""一键编译脚本：根据平台选择打包工具。
+
+- Windows: PyInstaller
+- macOS / Linux: Nuitka
 
 用法：
     python scripts/build_exe.py            # 完整构建
-    python scripts/build_exe.py --dry-run  # 仅打印 Nuitka 命令，不执行
+    python scripts/build_exe.py --dry-run  # 仅打印命令，不执行
 
-Nuitka 不跨平台，各平台需在对应系统上编译（产物在 dist 目录下）：
-    Windows   -> dist/rp.exe
-    Linux     -> dist/rp
-    macOS     -> dist/rp
+各平台需在对应系统上编译（产物在 dist 目录下）：
+    Windows   -> dist/rp.exe   (PyInstaller --onefile)
+    Linux     -> dist/rp       (Nuitka --onefile)
+    macOS     -> dist/rp       (Nuitka --onefile)
 """
 
 from __future__ import annotations
@@ -26,10 +29,24 @@ LAUNCHER = ROOT / "scripts" / "launcher.py"
 
 
 def build_args() -> list[str]:
-    """构造 Nuitka 参数（可单测）。"""
+    """构造打包参数（可单测）。"""
     data_dir = ROOT / "src" / "data"
     if not data_dir.is_dir():
         raise FileNotFoundError(f"提示词数据目录不存在: {data_dir}")
+
+    if sys.platform == "win32":
+        sep = ";"
+        return [
+            "--onefile",
+            "--name=rp",
+            f"--add-data={data_dir}{sep}src/data",
+            f"--distpath={ROOT / 'dist'}",
+            f"--paths={ROOT}",
+            "--clean",
+            "--noconfirm",
+            str(LAUNCHER),
+        ]
+
     cmd = [
         "--onefile",
         "--standalone",
@@ -37,23 +54,26 @@ def build_args() -> list[str]:
         "--output-filename=rp",
         f"--include-data-dir={data_dir}=src/data",
         f"--output-dir={ROOT / 'dist'}",
+        "--static-libpython=no",
+        "--no-debug",
+        "--lto=yes",
         str(LAUNCHER),
     ]
-    if sys.platform == "win32":
-        cmd.append("--clang")
     return cmd
 
 
 def _command() -> list[str]:
+    if sys.platform == "win32":
+        return [sys.executable, "-m", "PyInstaller", *build_args()]
     return [sys.executable, "-m", "nuitka", *build_args()]
 
 
 def _build_env() -> dict[str, str]:
-    """Nuitka 编译环境：把项目根目录加入模块搜索路径，确保 src 包被编译进产物。
+    """打包环境：把项目根目录加入模块搜索路径，确保 src 包能被分析/编译进产物。
 
-    Nuitka 只搜索「主脚本目录 + 当前工作目录 + sys.path」，而主脚本位于
-    scripts/ 下，若在其它目录执行构建，src 包将无法被找到、不会被编译进去，
-    运行时会报 ModuleNotFoundError: No module named 'src.main'。
+    PyInstaller / Nuitka 都依赖主脚本所在目录 + 当前工作目录 + sys.path
+    来发现依赖。主脚本位于 scripts/ 下，若在其它目录执行构建，
+    src 包将无法被找到、不会被打包，运行时会报 ModuleNotFoundError。
     """
     env = dict(os.environ)
     pythonpath = str(ROOT)
@@ -64,7 +84,15 @@ def _build_env() -> dict[str, str]:
     return env
 
 
-def _ensure_nuitka() -> None:
+def _ensure_builder() -> None:
+    """按平台安装对应打包工具。"""
+    if sys.platform == "win32":
+        try:
+            import PyInstaller  # noqa: F401
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+        return
+
     try:
         import nuitka  # noqa: F401
     except ImportError:
@@ -92,9 +120,10 @@ def _sync_env_to_dist() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="build_exe", description="一键编译单文件 rp 可执行程序（Nuitka）"
+        prog="build_exe",
+        description="一键编译单文件 rp 可执行程序（Windows 走 PyInstaller，其余平台走 Nuitka）",
     )
-    parser.add_argument("--dry-run", action="store_true", help="仅打印 Nuitka 命令，不执行")
+    parser.add_argument("--dry-run", action="store_true", help="仅打印命令，不执行")
     args = parser.parse_args(argv)
 
     cmd = _command()
@@ -102,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         print(" ".join(cmd))
         return 0
 
-    _ensure_nuitka()
+    _ensure_builder()
     subprocess.check_call(cmd, cwd=ROOT, env=_build_env())
     exe = ROOT / "dist" / _binary_name()
     if exe.is_file():

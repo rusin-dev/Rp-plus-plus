@@ -49,6 +49,10 @@ def test_config_attrs_stable_in_non_frozen_env():
 
 
 def test_build_args_for_nuitka():
+    if sys.platform == "win32":
+        import pytest
+
+        pytest.skip("Nuitka path not used on Windows")
     from scripts.build_exe import build_args
 
     args = build_args()
@@ -63,13 +67,38 @@ def test_build_args_for_nuitka():
     assert args[-1].endswith("launcher.py")
 
 
+def test_build_args_for_pyinstaller():
+    if sys.platform != "win32":
+        import pytest
+
+        pytest.skip("PyInstaller path only used on Windows")
+    from scripts.build_exe import build_args
+
+    args = build_args()
+    assert "--onefile" in args
+    assert any(a == "--name=rp" for a in args)
+    data_spec = next(a for a in args if a.startswith("--add-data="))
+    assert "src/data" in data_spec
+    distpath = next(a for a in args if a.startswith("--distpath="))
+    assert Path(distpath.removeprefix("--distpath=")).name == "dist"
+    assert "--clean" in args
+    assert "--noconfirm" in args
+    assert args[-1].endswith("launcher.py")
+
+
 def test_build_args_data_spec_targets_src_data():
     from scripts.build_exe import build_args
 
-    data_spec = next(a for a in build_args() if a.startswith("--include-data-dir=")).removeprefix(
-        "--include-data-dir="
-    )
-    source, target = data_spec.split("=")
+    args = build_args()
+    if sys.platform == "win32":
+        data_spec = next(a for a in args if a.startswith("--add-data=")).removeprefix("--add-data=")
+        sep = ";"
+    else:
+        data_spec = next(a for a in args if a.startswith("--include-data-dir=")).removeprefix(
+            "--include-data-dir="
+        )
+        sep = "="
+    source, target = data_spec.split(sep)
     assert Path(source).is_dir()
     assert target == "src/data"
 
