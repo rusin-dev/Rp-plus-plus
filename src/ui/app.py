@@ -467,6 +467,18 @@ class ChatApp:
         self._picker_mode = None
         self._picker_items = []
 
+    def _picker_cancel(self) -> None:
+        self._picker_mode = None
+        self._picker_items = []
+
+    def _dismiss_panel(self) -> None:
+        if self._picker_mode is not None:
+            self._picker_mode = None
+            self._picker_items = []
+            return
+        if self._command_display is not None:
+            self._command_display = None
+
     def _consume_picker_pending(self) -> bool:
         """处理已确认的选择；返回 True 表示已消费（调用方应跳过输入文本处理）。"""
         pending = self._picker_pending
@@ -502,7 +514,9 @@ class ChatApp:
                             active=lambda: self._picker_mode is not None,
                             move=self._picker_move,
                             confirm=self._picker_confirm,
+                            cancel=self._picker_cancel,
                         ),
+                        dismiss_panel=self._dismiss_panel,
                     ),
                     lexer=SlashCommandLexer(),
                 )

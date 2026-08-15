@@ -86,21 +86,25 @@ class PickerHandle:
         active: Callable[[], bool],
         move: Callable[[int], None],
         confirm: Callable[[], None],
+        cancel: Callable[[], None] | None = None,
     ) -> None:
         self.active = active
         self.move = move
         self.confirm = confirm
+        self.cancel = cancel if cancel is not None else (lambda: None)
 
 
 def build_key_bindings(
     on_interrupt: Callable[[], bool] | None = None,
     picker: PickerHandle | None = None,
+    dismiss_panel: Callable[[], None] | None = None,
 ) -> KeyBindings:
     """构建输入键位绑定。
 
     - Shift+Tab 循环切换工作模式（plan→build→auto）
     - Ctrl-C：回调返回 True 时退出输入，否则仅刷新界面（用于“再按一次退出”）
-    - 选择器激活时：↑/↓ 移动高亮，Enter 确认选择
+    - 选择器激活时：↑/↓ 移动高亮，Enter 确认选择，Esc 关闭选择器
+    - 提供 dismiss_panel 时：未在选择器中按 Esc 调用该回调（用于关闭命令展示）
     """
 
     kb = KeyBindings()
@@ -138,7 +142,16 @@ def build_key_bindings(
 
         @kb.add("escape", filter=active)
         def _picker_cancel(event: KeyPressEvent) -> None:
-            event.app.exit(result="")
+            picker.cancel()
+            event.app.invalidate()
+
+    if dismiss_panel is not None:
+        dismiss_active = Condition(lambda: picker is None or not picker.active())
+
+        @kb.add("escape", filter=dismiss_active)
+        def _dismiss(event: KeyPressEvent) -> None:
+            dismiss_panel()
+            event.app.invalidate()
 
     return kb
 

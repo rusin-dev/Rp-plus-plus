@@ -150,3 +150,116 @@ def test_ctrl_c_binding_without_callback_does_not_exit():
         app=SimpleNamespace(invalidate=lambda: None, exit=lambda exception=None: None)
     )
     ctrl_c.handler(event)  # type: ignore[arg-type]
+
+
+def test_picker_handle_cancel_defaults_to_noop():
+    from src.ui.input import PickerHandle
+
+    handle = PickerHandle(
+        active=lambda: False,
+        move=lambda _delta: None,
+        confirm=lambda: None,
+    )
+    assert handle.cancel is not None
+    handle.cancel()
+
+
+def test_escape_with_active_picker_invokes_cancel_and_does_not_exit():
+    from types import SimpleNamespace
+
+    from src.ui.input import PickerHandle, build_key_bindings
+
+    cancelled: list[bool] = []
+    handle = PickerHandle(
+        active=lambda: True,
+        move=lambda _delta: None,
+        confirm=lambda: None,
+        cancel=lambda: cancelled.append(True),
+    )
+    kb = build_key_bindings(picker=handle)
+
+    class _App:
+        def __init__(self) -> None:
+            self.invalidated: list[bool] = []
+            self.exited: list[tuple[object, object]] = []
+
+        def invalidate(self) -> None:
+            self.invalidated.append(True)
+
+        def exit(self, exception=None, result=None):  # type: ignore[no-untyped-def]
+            self.exited.append((exception, result))
+
+    app = _App()
+    event = SimpleNamespace(app=app)
+    esc = next(b for b in kb.bindings if "escape" in b.keys)
+    esc.handler(event)  # type: ignore[arg-type]
+
+    assert cancelled == [True]
+    assert app.invalidated == [True]
+    assert app.exited == []
+
+
+def test_escape_without_picker_invokes_dismiss_panel_and_does_not_exit():
+    from types import SimpleNamespace
+
+    from src.ui.input import build_key_bindings
+
+    dismissed: list[bool] = []
+    kb = build_key_bindings(dismiss_panel=lambda: dismissed.append(True))
+
+    class _App:
+        def __init__(self) -> None:
+            self.invalidated: list[bool] = []
+            self.exited: list[tuple[object, object]] = []
+
+        def invalidate(self) -> None:
+            self.invalidated.append(True)
+
+        def exit(self, exception=None, result=None):  # type: ignore[no-untyped-def]
+            self.exited.append((exception, result))
+
+    app = _App()
+    event = SimpleNamespace(app=app)
+    esc = next(b for b in kb.bindings if "escape" in b.keys)
+    esc.handler(event)  # type: ignore[arg-type]
+
+    assert dismissed == [True]
+    assert app.invalidated == [True]
+    assert app.exited == []
+
+
+def test_active_picker_escape_takes_precedence_over_dismiss_panel():
+    from types import SimpleNamespace
+
+    from src.ui.input import PickerHandle, build_key_bindings
+
+    cancelled: list[bool] = []
+    dismissed: list[bool] = []
+    handle = PickerHandle(
+        active=lambda: True,
+        move=lambda _delta: None,
+        confirm=lambda: None,
+        cancel=lambda: cancelled.append(True),
+    )
+    kb = build_key_bindings(picker=handle, dismiss_panel=lambda: dismissed.append(True))
+
+    app = SimpleNamespace(
+        invalidate=lambda: None,
+        exit=lambda exception=None, result=None: None,
+    )
+    event = SimpleNamespace(app=app)
+
+    picker_esc = next(
+        b for b in kb.bindings if "escape" in b.keys and b.filter is not None and b.filter() is True
+    )
+    picker_esc.handler(event)  # type: ignore[arg-type]
+
+    assert cancelled == [True]
+    assert dismissed == []
+
+
+def test_no_picker_or_dismiss_panel_registers_no_escape_binding():
+    from src.ui.input import build_key_bindings
+
+    kb = build_key_bindings()
+    assert [b for b in kb.bindings if "escape" in b.keys] == []

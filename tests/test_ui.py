@@ -692,6 +692,167 @@ def test_finish_connect_api_key_blank_rejected(monkeypatch, tmp_path):
     assert Config.ACTIVE_PROVIDER is None
 
 
+def test_picker_cancel_clears_active_picker_state(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/connect")
+    assert app._picker_mode == "menu"
+    assert app._picker_items
+
+    app._picker_cancel()
+
+    assert app._picker_mode is None
+    assert app._picker_items == []
+
+
+def test_picker_cancel_is_noop_when_no_picker(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    assert app._picker_mode is None
+    assert app._picker_items == []
+
+    app._picker_cancel()
+
+    assert app._picker_mode is None
+    assert app._picker_items == []
+
+
+def test_dismiss_panel_clears_command_display(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    app._run_command("/variants")
+    assert app._command_display is not None
+
+    app._dismiss_panel()
+
+    assert app._command_display is None
+
+
+def test_dismiss_panel_prioritizes_picker_over_command_display(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/connect")
+    assert app._picker_mode == "menu"
+    assert app._command_display is None
+
+    app._dismiss_panel()
+
+    assert app._picker_mode is None
+    assert app._picker_items == []
+    assert app._command_display is None
+
+
+def test_dismiss_panel_is_noop_when_nothing_visible(monkeypatch):
+    app, bus = _make_app(monkeypatch)
+    assert app._command_display is None
+    assert app._picker_mode is None
+
+    app._dismiss_panel()
+
+    assert app._command_display is None
+    assert app._picker_mode is None
+
+
+def test_ensure_input_wires_escape_to_picker_cancel(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from prompt_toolkit import PromptSession as _PromptSession
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.output import DummyOutput
+
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    captured: dict[str, Any] = {}
+
+    class _FakePromptSession:
+        def __new__(cls, *args, **kwargs):
+            captured["key_bindings"] = kwargs.get("key_bindings")
+            return _PromptSession(input=DummyInput(), output=DummyOutput(), **kwargs)
+
+        def __class_getitem__(cls, item):
+            return cls
+
+    monkeypatch.setattr("src.ui.app.PromptSession", _FakePromptSession)
+    app._run_command("/connect")
+    assert app._picker_mode == "menu"
+
+    kb = app._ensure_input().key_bindings  # type: ignore[union-attr]
+
+    invalidated: list[bool] = []
+    exited: list[tuple[object, object]] = []
+
+    class _FakeApp:
+        def invalidate(self) -> None:
+            invalidated.append(True)
+
+        def exit(self, exception=None, result=None):  # type: ignore[no-untyped-def]
+            exited.append((exception, result))
+
+    event = SimpleNamespace(app=_FakeApp())
+    fired = False
+    for binding in kb.bindings:
+        if "escape" in binding.keys and binding.filter is not None and binding.filter():
+            binding.handler(event)  # type: ignore[arg-type]
+            fired = True
+            break
+    assert fired
+
+    assert app._picker_mode is None
+    assert app._picker_items == []
+    assert invalidated == [True]
+    assert exited == []
+
+
+def test_ensure_input_wires_escape_to_dismiss_panel(monkeypatch):
+    from types import SimpleNamespace
+
+    from prompt_toolkit import PromptSession as _PromptSession
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.output import DummyOutput
+
+    app, bus = _make_app(monkeypatch)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    captured: dict[str, Any] = {}
+
+    class _FakePromptSession:
+        def __new__(cls, *args, **kwargs):
+            captured["key_bindings"] = kwargs.get("key_bindings")
+            return _PromptSession(input=DummyInput(), output=DummyOutput(), **kwargs)
+
+        def __class_getitem__(cls, item):
+            return cls
+
+    monkeypatch.setattr("src.ui.app.PromptSession", _FakePromptSession)
+    app._run_command("/variants")
+    assert app._command_display is not None
+
+    kb = app._ensure_input().key_bindings  # type: ignore[union-attr]
+
+    invalidated: list[bool] = []
+    exited: list[tuple[object, object]] = []
+
+    class _FakeApp:
+        def invalidate(self) -> None:
+            invalidated.append(True)
+
+        def exit(self, exception=None, result=None):  # type: ignore[no-untyped-def]
+            exited.append((exception, result))
+
+    event = SimpleNamespace(app=_FakeApp())
+    fired = False
+    for binding in kb.bindings:
+        if "escape" in binding.keys and binding.filter is not None and binding.filter():
+            binding.handler(event)  # type: ignore[arg-type]
+            fired = True
+            break
+    assert fired
+
+    assert app._command_display is None
+    assert invalidated == [True]
+    assert exited == []
+
+
 def test_connect_display_shows_provider_names_only(monkeypatch, tmp_path):
     _setup_preset(tmp_path, monkeypatch, name="openai", api_url="https://api.openai.com/v1")
     _setup_providers(
