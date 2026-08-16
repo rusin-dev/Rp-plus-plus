@@ -103,6 +103,20 @@ When input starts with `/`, a command suggestion box appears automatically: use 
 
 Conversations are automatically saved to `.rp/sessions/` (already added to `.gitignore`); on next launch, use `/session` to restore context.
 
+### Bottom Status Bar & Todo List
+
+The input area has a bottom status bar showing the current mode and model on the right. When the model creates a todo list via `create_todo_list`, it appears in the bottom bar too, separated from the input box by a horizontal rule:
+
+```
+────────────────────────────────────────────────────────────
+  1. [ ] 分析需求
+  2. [~] 设计接口
+  3. [x] 编写测试
+⏸ auto mode on · /help 查看快捷键    deepseek-v4-flash · deepseek
+```
+
+Status markers: `[ ]` pending, `[~]` in progress, `[x]` completed. The todo list is session-scoped and shared with sub-agents; use `todos_update` to advance items as the task progresses. The picker (`/connect`, `/checkpoints`) and command display (`/help`, `/models`, etc.) take precedence over the todo list while they are open.
+
 ### Auto Git Repository & Commits
 
 When a session starts, rp automatically initializes a git repository in the workspace root (`ROOT_DIR`) if it is not already one, and creates a commit after each completed round of conversation so every round's changes are snapshotted.
