@@ -143,19 +143,43 @@ rp 创建的每一个提交（初始基线、每轮提交、任务分支提交�
 
 供应商配置使用 JSON 文件存储，不再使用环境变量：
 
-- **预设模板**：`src/data/providers/preset/<名称>.json`，只含 `api_url` / `models` / `default_model`，不含 API Key，随项目分发。
+- **预设模板**：`src/data/providers/preset/<名称>.json`，只含 `type` / `api_url` / `models` / `default_model`，不含 API Key，随项目分发。
 - **使用预设**：运行 `rp` 后输入 `/connect`，底部固定区域会展示可用供应商列表，用 `↑ ↓` 切换、`Enter` 确认，随后提示输入 API Key，程序自动生成 `src/data/providers/<名称>.json`（预设元信息 + `api_key`）并切换。
 - **当前选中**：`/connect`、`/models` 切换的 provider/model 会持久化到 `.rp/config.json`，下次启动自动恢复。
+
+`type` 决定底层传输后端：
+
+| `type` | 后端 | 说明 |
+| --- | --- | --- |
+| `openai` | OpenAI SDK → `chat.completions` | OpenAI 兼容供应商的默认选项（DeepSeek、GLM、Kimi、Qwen、MiniMax 等） |
+| `responses` | OpenAI SDK → `responses` | OpenAI Responses API；`system` 转 `instructions`，工具结果转 `function_call_output` 项 |
+| `anthropic` | `anthropic` SDK → `messages.stream` | Anthropic Claude；`system` 是独立参数，`max_tokens` 必填（默认 8192） |
+
+`type` 缺失或非法时，该 provider 配置文件会被直接拒绝（`Config.validate()` 会给出明确提示）。
 
 手动创建 `src/data/providers/<名称>.json` 示例：
 
 ```json
 {
     "name": "deepseek",
+    "type": "openai",
     "api_url": "https://api.deepseek.com/v1",
     "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
     "default_model": "deepseek-v4-flash",
     "api_key": "sk-xxx"
+}
+```
+
+Anthropic 示例：
+
+```json
+{
+    "name": "anthropic",
+    "type": "anthropic",
+    "api_url": "https://api.anthropic.com",
+    "models": ["claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"],
+    "default_model": "claude-sonnet-4-5",
+    "api_key": "sk-ant-xxx"
 }
 ```
 
