@@ -44,6 +44,7 @@ INPUT_STYLE = Style.from_dict(
         "cmd-hint": "italic dim",
         "picker-selected": "bold black bg:ansibrightcyan",
         "picker-hint": "italic dim",
+        "bottom-toolbar": "noreverse",
     }
 )
 
