@@ -621,6 +621,101 @@ def _setup_preset(
     monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
 
 
+def test_command_apikey_requires_provider(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _make_app(monkeypatch)
+    output = _run_command_capture(app, "/apikey")
+    assert "请先 /connect" in output
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+
+
+def test_command_apikey_direct_sets_key(monkeypatch, tmp_path):
+    import json
+
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "k1", "https://api.deepseek.com", "chat", "chat")],
+    )
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
+    app, bus = _make_app(monkeypatch)
+    output = _run_command_capture(app, "/apikey sk-new")
+    assert "已更新 deepseek 的 API Key" in output
+    provider = Config.get_provider("deepseek")
+    assert provider is not None
+    assert provider.api_key == "sk-new"
+    saved = json.loads((tmp_path / "providers" / "deepseek.json").read_text(encoding="utf-8"))
+    assert saved["api_key"] == "sk-new"
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+
+
+def test_command_apikey_interactive_awaits_input(monkeypatch, tmp_path):
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "k1", "https://api.deepseek.com", "chat", "chat")],
+    )
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
+    app, bus = _make_app(monkeypatch)
+    app._run_command("/apikey")
+    assert app._awaiting_api_key == "deepseek"
+    assert app._awaiting_apikey_update is True
+    app._finish_connect_api_key("deepseek", "sk-interactive")
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+    provider = Config.get_provider("deepseek")
+    assert provider is not None
+    assert provider.api_key == "sk-interactive"
+
+
+def test_command_apikey_interactive_blank_cancels(monkeypatch, tmp_path):
+    from rich.console import Console
+
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "k1", "https://api.deepseek.com", "chat", "chat")],
+    )
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
+    app, bus = _make_app(monkeypatch)
+    original = app._console
+    app._console = Console(force_terminal=False, width=100)
+    try:
+        with app._console.capture() as capture:
+            app._run_command("/apikey")
+            assert app._awaiting_apikey_update is True
+            app._finish_connect_api_key("deepseek", "   ")
+        output = capture.get()
+    finally:
+        app._console = original
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+    provider = Config.get_provider("deepseek")
+    assert provider is not None
+    assert provider.api_key == "k1"
+    assert "保持不变" in output
+
+
+def test_command_apikey_fills_missing_key(monkeypatch, tmp_path):
+    import json
+
+    _setup_providers(
+        tmp_path,
+        monkeypatch,
+        [("deepseek", "", "https://api.deepseek.com", "chat", "chat")],
+    )
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "deepseek")
+    app, bus = _make_app(monkeypatch)
+    app._run_command("/apikey")
+    assert app._awaiting_api_key == "deepseek"
+    assert app._awaiting_apikey_update is True
+    app._finish_connect_api_key("deepseek", "sk-abc")
+    saved = json.loads((tmp_path / "providers" / "deepseek.json").read_text(encoding="utf-8"))
+    assert saved["api_key"] == "sk-abc"
+
+
 def test_command_connect_opens_picker_in_terminal(monkeypatch, tmp_path):
     _setup_preset(tmp_path, monkeypatch)
     app, bus = _terminal_app(monkeypatch)

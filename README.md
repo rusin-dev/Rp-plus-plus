@@ -93,6 +93,7 @@ When input starts with `/`, a command suggestion box appears automatically: use 
 | `/variants` | View/switch thinking intensity (`low` / `medium` / `high` / `max`, passed to the API as `reasoning_effort`) |
 | `/models` | List the current provider's available models; `/models <name>` switches |
 | `/connect` | List configured providers; `/connect <name>` switches |
+| `/apikey` | Interactively configure the current provider's API key (stored as plaintext; `/apikey <key>` sets it directly, Enter with an empty input cancels) |
 | `/mode` | View/switch working mode (`plan` / `build` / `auto`) |
 | `/compact` | Compact the conversation context (keeps the last 20 messages; `/compact <n>` to specify) |
 | `/usage` | View token usage and context window occupancy |

@@ -111,6 +111,7 @@ class ChatApp:
         self._picker_index = 0
         self._picker_pending: str | None = None
         self._awaiting_api_key: str | None = None
+        self._awaiting_apikey_update = False
         self._git_ready = False
         self._checkpoint_store = CheckpointStore(config.ROOT_DIR)
         self._picker_kind: str | None = None
@@ -375,6 +376,10 @@ class ChatApp:
     def _prompt_message(self) -> AnyFormattedText:
         """构建提示符消息（可调用，模式切换后徽标实时更新；等待 API Key 时改为输入提示）。"""
         if self._awaiting_api_key is not None:
+            if self._awaiting_apikey_update:
+                return [
+                    ("class:tool-prompt", f"新 API Key for {self._awaiting_api_key}（回车取消）: "),
+                ]
             return [
                 ("class:tool-prompt", f"API Key for {self._awaiting_api_key}: "),
             ]
@@ -600,6 +605,8 @@ class ChatApp:
             self._models_command(arg)
         elif name == "connect":
             self._connect_command(arg)
+        elif name == "apikey":
+            self._apikey_command(arg)
         elif name == "mode":
             self._mode_command(arg)
         elif name == "compact":
@@ -681,8 +688,16 @@ class ChatApp:
         self._save_session()
 
     def _finish_connect_api_key(self, name: str, api_key: str) -> None:
-        """收集到 API Key 后用预设生成配置文件并切换。"""
+        """收集到 API Key：/apikey 时更新当前供应商的 Key，否则用预设生成配置文件并切换。"""
         self._awaiting_api_key = None
+        if self._awaiting_apikey_update:
+            self._awaiting_apikey_update = False
+            api_key = api_key.strip()
+            if not api_key:
+                self._console.print(f"已取消，{name} 的 API Key 保持不变", style=_DIM_STYLE)
+                return
+            self._set_api_key(name, api_key)
+            return
         api_key = api_key.strip()
         if not api_key:
             self._console.print(f"✖ 未输入 API Key，{name} 未配置", style=_ERROR_STYLE)
@@ -698,6 +713,38 @@ class ChatApp:
             style=_OK_STYLE,
         )
         self._save_session()
+
+    def _apikey_command(self, arg: str | None) -> None:
+        """交互式配置当前供应商的 API Key（明文存储，无需加密）。
+
+        - `/apikey`：提示输入新 Key；留空回车取消
+        - `/apikey <key>`：直接设置
+        """
+        provider = self._config.active_provider()
+        if provider is None:
+            self._console.print(
+                "未配置 API provider，请先 /connect 选择一个供应商", style=_ERROR_STYLE
+            )
+            return
+        if arg:
+            self._set_api_key(provider.name, arg)
+            return
+        self._awaiting_api_key = provider.name
+        self._awaiting_apikey_update = True
+        self._console.print(
+            f"请输入 {provider.name} 的新 API Key（直接回车取消）", style=_TOOL_STYLE
+        )
+
+    def _set_api_key(self, name: str, api_key: str) -> None:
+        try:
+            provider = self._config.set_api_key(name, api_key)
+        except ValueError as exc:
+            self._console.print(f"✖ {exc}", style=_ERROR_STYLE)
+            return
+        self._console.print(
+            f"已更新 {provider.name} 的 API Key（明文保存至 {provider.config_file}）",
+            style=_OK_STYLE,
+        )
 
     def _models_command(self, model: str | None) -> None:
         provider = self._config.active_provider()

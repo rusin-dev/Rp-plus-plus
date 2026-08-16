@@ -114,6 +114,43 @@ def test_use_preset_unknown_raises(tmp_path, monkeypatch):
         Config.use_preset("nope", "sk-x")
 
 
+def test_set_api_key_updates_existing_provider(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    _write_provider(tmp_path, "deepseek", "old-key", "https://a.example.com", ["m1"], "m1")
+    provider = Config.set_api_key("deepseek", "sk-new")
+    assert provider.api_key == "sk-new"
+    assert provider.models == ["m1"]
+    saved = json.loads((tmp_path / "providers" / "deepseek.json").read_text(encoding="utf-8"))
+    assert saved["api_key"] == "sk-new"
+    assert saved["default_model"] == "m1"
+    assert Config.get_provider("deepseek").api_key == "sk-new"
+
+
+def test_set_api_key_creates_from_preset(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    provider = Config.set_api_key("openai", "sk-123")
+    assert provider.name == "openai"
+    assert provider.api_key == "sk-123"
+    target = tmp_path / "providers" / "openai.json"
+    assert target.is_file()
+    saved = json.loads(target.read_text(encoding="utf-8"))
+    assert saved["api_key"] == "sk-123"
+    assert saved["default_model"] == "m1"
+
+
+def test_set_api_key_unknown_raises(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        Config.set_api_key("nope", "sk-x")
+
+
+def test_set_api_key_blank_raises(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    _write_provider(tmp_path, "deepseek", "k1", "https://a.example.com", ["m1"], "m1")
+    with pytest.raises(ValueError):
+        Config.set_api_key("deepseek", "   ")
+
+
 def test_set_provider_switches_and_persists(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
     _write_provider(tmp_path, "deepseek", "k1", "https://a.example.com", ["d1"], "d1")

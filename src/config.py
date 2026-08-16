@@ -296,6 +296,37 @@ class Config:
         return provider
 
     @classmethod
+    def set_api_key(cls, name: str, api_key: str) -> Provider:
+        """为指定供应商设置 API Key（明文写入其 JSON 配置文件）。
+
+        已配置的供应商直接更新 Key；未配置但存在预设的供应商从预设生成配置文件。
+        """
+        api_key = api_key.strip()
+        if not api_key:
+            raise ValueError("API Key 不能为空")
+        provider = cls.get_provider(name)
+        if provider is None:
+            preset = cls.get_preset(name)
+            if preset is None:
+                raise ValueError(
+                    f"未知的 provider：{name}，可用：{', '.join(cls.providers()) or '无'}"
+                )
+            provider = preset
+        cls.PROVIDER_DIR.mkdir(parents=True, exist_ok=True)
+        path = cls.PROVIDER_DIR / f"{provider.name}.json"
+        data = {
+            "name": provider.name,
+            "api_url": provider.api_url,
+            "models": provider.models,
+            "default_model": provider.default_model,
+            "api_key": api_key,
+        }
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        updated = cls._provider_from_file(path)
+        assert updated is not None
+        return updated
+
+    @classmethod
     def set_model(cls, model: str) -> None:
         """切换当前 provider 的模型。"""
         provider = cls.active_provider()
