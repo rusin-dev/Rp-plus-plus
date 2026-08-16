@@ -1,5 +1,6 @@
 {
     "name": "MiniMax (minimax.io)",
+    "type": "openai",
     "api_url": "https://api.minimaxi.io/v1",
     "models": [
         "minimax-m3",

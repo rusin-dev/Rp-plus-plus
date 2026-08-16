@@ -1,5 +1,6 @@
 # 运行时依赖
 openai>=3.0.0
+anthropic>=0.40.0
 prompt-toolkit>=3.0.0
 python-dotenv>=1.2.2
 rich>=15.0.0

@@ -88,7 +88,11 @@ def _get_path(name: str, default: Path) -> Path:
 
 @dataclass(slots=True)
 class Provider:
-    """一个可切换的 API 供应商及其可用模型。"""
+    """一个可切换的 API 供应商及其可用模型。
+
+    type 决定底层传输：openai/responses 走 OpenAI SDK 的对应接口，
+    anthropic 走官方 anthropic SDK。
+    """
 
     name: str
     api_key: str
@@ -96,6 +100,11 @@ class Provider:
     models: list[str]
     default_model: str
     config_file: str = ""
+    type: str = "openai"
+
+
+# 支持的 provider.type 取值
+PROVIDER_TYPES: tuple[str, ...] = ("openai", "responses", "anthropic")
 
 
 class Config:
@@ -284,6 +293,7 @@ class Config:
         cls.PROVIDER_DIR.mkdir(parents=True, exist_ok=True)
         data = {
             "name": preset.name,
+            "type": preset.type,
             "api_url": preset.api_url,
             "models": preset.models,
             "default_model": preset.default_model,
@@ -398,6 +408,9 @@ class Config:
             return None
         if not isinstance(data, dict):
             return None
+        ptype = str(data.get("type") or "").strip()
+        if ptype not in PROVIDER_TYPES:
+            return None
         name = str(data.get("name") or path.stem).strip().lower()
         api_key = str(data.get("api_key") or "").strip()
         api_url = str(data.get("api_url") or "").strip()
@@ -409,6 +422,7 @@ class Config:
             default_model = models[0]
         return Provider(
             name=name,
+            type=ptype,
             api_key=api_key,
             api_url=api_url,
             models=models,
@@ -421,6 +435,15 @@ class Config:
         """运行时校验关键配置，未配置时抛出明确的错误信息。"""
         provider = cls.active_provider()
         if provider is None:
+            # 如果当前选中的 provider 对应的配置文件存在但被解析拒绝
+            # （通常是因为缺少或非法的 type 字段），给出明确提示
+            if cls.ACTIVE_PROVIDER and cls.PROVIDER_DIR.is_dir():
+                path = cls.PROVIDER_DIR / f"{cls.ACTIVE_PROVIDER}.json"
+                if path.is_file():
+                    raise ValueError(
+                        f"provider {cls.ACTIVE_PROVIDER} 配置无效（缺少或非法的 type 字段，"
+                        f"应为 {'/'.join(PROVIDER_TYPES)}），请检查 {path}"
+                    )
             raise ValueError("未配置任何 API provider，请运行 /connect 使用预设并输入 API Key")
         if not provider.api_key:
             raise ValueError(
