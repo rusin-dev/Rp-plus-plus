@@ -14,9 +14,10 @@ _POSITIONAL_FIELDS: dict[str, tuple[str, ...]] = {
     "web_search": ("query",),
     "web_fetch": ("url",),
     "delegate": ("agent", "task"),
+    "todos_update": ("todo_id",),
 }
 
-_OMIT_FIELDS = {"content", "old_string", "new_string", "context"}
+_OMIT_FIELDS = {"content", "old_string", "new_string", "context", "todos"}
 
 
 def _short(value: object) -> str:

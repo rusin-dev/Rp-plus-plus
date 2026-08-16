@@ -18,6 +18,9 @@ def test_registry_builtin_schemas():
         "web_search",
         "web_fetch",
         "delegate",
+        "create_todo_list",
+        "todos_read",
+        "todos_update",
     ]
 
 
@@ -327,6 +330,116 @@ def test_register_custom_tool():
     )
     result = registry.execute("echo_tool", '{"value": "x"}', EventBus())
     assert result == "got:x"
+
+
+# ---------- todo 工具 ----------
+
+
+def test_create_todo_list_sets_up_list(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    result = registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "写测试", "status": "pending"}, {"content": "实现功能", "status": "pending"}]}',
+        EventBus(),
+    )
+    assert "写测试" in result
+    assert "实现功能" in result
+
+
+def test_todos_read_returns_empty_when_no_list(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    result = registry.execute("todos_read", "{}", EventBus())
+    assert "暂无" in result or "空" in result
+
+
+def test_todos_read_after_create(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "任务A", "status": "pending"}]}',
+        EventBus(),
+    )
+    result = registry.execute("todos_read", "{}", EventBus())
+    assert "任务A" in result
+
+
+def test_todos_update_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "任务A"}, {"content": "任务B"}]}',
+        EventBus(),
+    )
+    result = registry.execute(
+        "todos_update", '{"todo_id": 2, "status": "completed"}', EventBus()
+    )
+    assert "已更新待办 #2" in result
+    read = registry.execute("todos_read", "{}", EventBus())
+    assert "任务B" in read
+    assert "[x]" in read
+
+
+def test_todos_update_invalid_id(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "任务A"}]}',
+        EventBus(),
+    )
+    result = registry.execute(
+        "todos_update", '{"todo_id": 99, "status": "completed"}', EventBus()
+    )
+    assert "error:" in result
+
+
+def test_todos_update_invalid_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "任务A"}]}',
+        EventBus(),
+    )
+    result = registry.execute(
+        "todos_update", '{"todo_id": 1, "status": "bogus"}', EventBus()
+    )
+    assert "error:" in result
+
+
+def test_create_todo_list_replaces_previous(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "旧任务"}]}',
+        EventBus(),
+    )
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "新任务"}]}',
+        EventBus(),
+    )
+    read = registry.execute("todos_read", "{}", EventBus())
+    assert "新任务" in read
+    assert "旧任务" not in read
+
+
+def test_todo_tools_shared_across_filtered_registry(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "共享任务"}]}',
+        EventBus(),
+    )
+    filtered = registry.filtered({"todos_read"})
+    result = filtered.execute("todos_read", "{}", EventBus())
+    assert "共享任务" in result
 
 
 # ---------- 网络工具 ----------

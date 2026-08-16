@@ -250,6 +250,91 @@ def _grep(
     return "\n".join(results) if results else "无匹配"
 
 
+# ---------- todo 工具 ----------
+
+_TODO_STATUSES = ("pending", "in_progress", "completed")
+_TODO_PRIORITIES = ("high", "medium", "low")
+
+
+def _create_todo_list(
+    bus: EventBus,
+    todos: list[dict],
+    state: list[dict] | None = None,
+) -> str:
+    """整体替换待办清单（每个条目 content 必填，status/priority 可选）。"""
+    if state is None:
+        state = []
+    items: list[dict] = []
+    for index, raw in enumerate(todos, 1):
+        content = str(raw.get("content", "")).strip()
+        if not content:
+            continue
+        status = raw.get("status", "pending")
+        if status not in _TODO_STATUSES:
+            status = "pending"
+        priority = raw.get("priority", "medium")
+        if priority not in _TODO_PRIORITIES:
+            priority = "medium"
+        items.append(
+            {
+                "id": index,
+                "content": content,
+                "status": status,
+                "priority": priority,
+            }
+        )
+    state.clear()
+    state.extend(items)
+    if not items:
+        return "已清空待办清单"
+    summary = _format_todos(items)
+    return f"已创建 {len(items)} 项待办:\n{summary}"
+
+
+def _todos_read(bus: EventBus, state: list[dict] | None = None) -> str:
+    """读取当前待办清单。"""
+    if state is None:
+        state = []
+    if not state:
+        return "暂无待办事项"
+    return _format_todos(state)
+
+
+def _todos_update(
+    bus: EventBus,
+    todo_id: int,
+    status: str,
+    state: list[dict] | None = None,
+) -> str:
+    """按 id 更新待办状态（pending/in_progress/completed）。"""
+    if state is None:
+        state = []
+    if status not in _TODO_STATUSES:
+        return f"error: 非法状态 {status}（可选 {'/'.join(_TODO_STATUSES)}）"
+    try:
+        target = int(todo_id)
+    except (TypeError, ValueError):
+        return f"error: todo_id 必须是整数: {todo_id}"
+    for item in state:
+        if item["id"] == target:
+            item["status"] = status
+            return f"已更新待办 #{target} → {status}: {item['content']}"
+    return f"error: 未找到待办 #{target}"
+
+
+def _format_todos(items: list[dict]) -> str:
+    """把待办条目列表格式化为可读文本。"""
+    lines: list[str] = []
+    for item in items:
+        marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}[
+            item["status"]
+        ]
+        lines.append(
+            f"{item['id']}. {marker} {item['content']}（{item['priority']}）"
+        )
+    return "\n".join(lines)
+
+
 # ---------- 网络工具 ----------
 
 
@@ -649,6 +734,91 @@ DELEGATE_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
     },
 }
 
+CREATE_TODO_LIST_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
+    "type": "function",
+    "function": {
+        "name": "create_todo_list",
+        "description": (
+            "创建一个新的待办清单，用于跟踪多步骤任务进度。"
+            "整体替换已有的待办清单；每条待办通过 content 描述，"
+            "可选 status（pending/in_progress/completed）与 priority（high/medium/low）。"
+            "适用于把一个复杂任务拆解为可执行的步骤列表。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "todos": {
+                    "type": "array",
+                    "description": "待办条目列表",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "待办内容描述",
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "completed"],
+                                "description": "状态（默认 pending）",
+                            },
+                            "priority": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                                "description": "优先级（默认 medium）",
+                            },
+                        },
+                        "required": ["content"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["todos"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+TODOS_READ_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
+    "type": "function",
+    "function": {
+        "name": "todos_read",
+        "description": "读取当前待办清单，了解还有哪些任务未完成。",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+}
+
+TODOS_UPDATE_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
+    "type": "function",
+    "function": {
+        "name": "todos_update",
+        "description": (
+            "更新某个待办条目的状态为 pending/in_progress/completed，"
+            "用于标记任务推进与完成。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "todo_id": {
+                    "type": "integer",
+                    "description": "待办条目的 id（从 1 开始）",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "in_progress", "completed"],
+                    "description": "新状态",
+                },
+            },
+            "required": ["todo_id", "status"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 _TOOL_HANDLERS: dict[str, Callable[..., str]] = {
     "ask": _ask,
     "shell": _run_shell,
@@ -659,6 +829,9 @@ _TOOL_HANDLERS: dict[str, Callable[..., str]] = {
     "web_search": _web_search,
     "web_fetch": _web_fetch,
     "delegate": _delegate,
+    "create_todo_list": _create_todo_list,
+    "todos_read": _todos_read,
+    "todos_update": _todos_update,
 }
 
 
@@ -679,9 +852,13 @@ class ToolRegistry:
             WEB_SEARCH_TOOL_SCHEMA,
             WEB_FETCH_TOOL_SCHEMA,
             DELEGATE_TOOL_SCHEMA,
+            CREATE_TODO_LIST_TOOL_SCHEMA,
+            TODOS_READ_TOOL_SCHEMA,
+            TODOS_UPDATE_TOOL_SCHEMA,
         ]
         self._handlers: dict[str, Callable[..., str]] = dict(_TOOL_HANDLERS)
         self._read_files: set[str] = set()
+        self._todos: list[dict] = []
 
     @property
     def schemas(self) -> list[ChatCompletionToolUnionParam]:
@@ -706,6 +883,7 @@ class ToolRegistry:
         new._schemas = [schema for schema in self._schemas if _schema_name(schema) in names]
         new._handlers = {name: handler for name, handler in self._handlers.items() if name in names}
         new._read_files = self._read_files
+        new._todos = self._todos
         return new
 
     def register(
@@ -728,6 +906,8 @@ class ToolRegistry:
         try:
             if name in {"read", "write", "edit"}:
                 return handler(bus, state=self._read_files, **params)
+            if name in {"create_todo_list", "todos_read", "todos_update"}:
+                return handler(bus, state=self._todos, **params)
             return handler(bus, **params)
         except Exception as exc:
             return f"error: 工具 {name} 执行失败: {exc}"

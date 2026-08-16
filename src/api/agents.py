@@ -35,6 +35,9 @@ _ALL_TOOLS = {
     "web_search",
     "web_fetch",
     "delegate",
+    "create_todo_list",
+    "todos_read",
+    "todos_update",
 }
 
 _FORBIDDEN_TOOLS = {"ask", "delegate"}

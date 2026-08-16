@@ -42,6 +42,24 @@ def test_delegate_positional():
     )
 
 
+def test_todos_read_no_args():
+    assert format_tool_call("todos_read", "{}") == "todos_read()"
+
+
+def test_todos_update_positional():
+    assert (
+        format_tool_call("todos_update", '{"todo_id": 2, "status": "completed"}')
+        == "todos_update(2, status=completed)"
+    )
+
+
+def test_create_todo_list_omits_todos_inline():
+    assert (
+        format_tool_call("create_todo_list", '{"todos": [{"content": "a", "status": "pending"}]}')
+        == "create_todo_list()"
+    )
+
+
 def test_web_search_query():
     assert (
         format_tool_call("web_search", '{"query": "python", "count": 3}')
