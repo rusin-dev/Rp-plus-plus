@@ -13,11 +13,13 @@ def _write_provider(
     models: list[str] | None = None,
     default: str = "",
     directory: str = "providers",
+    ptype: str = "openai",
 ) -> None:
     dir_path = tmp_path / directory
     dir_path.mkdir(parents=True, exist_ok=True)
     data: dict[str, object] = {
         "name": name,
+        "type": ptype,
         "api_key": api_key,
         "api_url": api_url,
     }
@@ -64,11 +66,69 @@ def test_providers_uses_filename_when_name_missing(tmp_path, monkeypatch):
     dir_path = tmp_path / "providers"
     dir_path.mkdir(parents=True, exist_ok=True)
     (dir_path / "my_provider.json").write_text(
-        json.dumps({"api_key": "k", "api_url": "https://x.example.com"}), encoding="utf-8"
+        json.dumps({"type": "openai", "api_key": "k", "api_url": "https://x.example.com"}),
+        encoding="utf-8",
     )
     providers = Config.providers()
     assert set(providers) == {"my_provider"}
     assert providers["my_provider"].default_model == ""
+
+
+def test_provider_without_type_is_rejected(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, preset_names=())
+    _write_provider(
+        tmp_path,
+        "bare",
+        "k",
+        "https://a.example.com",
+        ["m1"],
+        "m1",
+    )
+    (tmp_path / "providers" / "bare.json").write_text(
+        json.dumps({"name": "bare", "api_key": "k", "api_url": "https://a.example.com"}),
+        encoding="utf-8",
+    )
+    assert Config.providers() == {}
+
+
+def test_provider_with_invalid_type_is_rejected(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, preset_names=())
+    _write_provider(tmp_path, "weird", "k", "https://a.example.com", ["m1"], "m1", ptype="soap")
+    assert Config.providers() == {}
+
+
+def test_provider_type_parsed(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, preset_names=())
+    _write_provider(
+        tmp_path,
+        "anthropic",
+        "k",
+        "https://api.anthropic.com",
+        ["claude-x"],
+        "claude-x",
+        ptype="anthropic",
+    )
+    providers = Config.providers()
+    assert providers["anthropic"].type == "anthropic"
+
+
+def test_validate_requires_type(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, preset_names=())
+    _write_provider(
+        tmp_path,
+        "bare",
+        "k",
+        "https://a.example.com",
+        ["m1"],
+        "m1",
+    )
+    (tmp_path / "providers" / "bare.json").write_text(
+        json.dumps({"name": "bare", "api_key": "k", "api_url": "https://a.example.com"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", "bare")
+    with pytest.raises(ValueError, match="type"):
+        Config.validate()
 
 
 def test_providers_ignores_broken_files(tmp_path, monkeypatch):
@@ -101,6 +161,7 @@ def test_use_preset_writes_config_and_switches(tmp_path, monkeypatch):
     saved = json.loads(target.read_text(encoding="utf-8"))
     assert saved["api_key"] == "sk-123"
     assert saved["default_model"] == "m1"
+    assert saved["type"] == "openai"
     configured = Config.get_provider("deepseek")
     assert configured is not None
     assert configured.api_key == "sk-123"

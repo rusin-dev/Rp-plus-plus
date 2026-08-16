@@ -1,0 +1,11 @@
+{
+    "name": "Anthropic",
+    "type": "anthropic",
+    "api_url": "https://api.anthropic.com",
+    "models": [
+        "claude-opus-4-1",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5"
+    ],
+    "default_model": "claude-sonnet-4-5"
+}

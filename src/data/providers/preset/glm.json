@@ -1,5 +1,6 @@
 {
     "name": "GLM",
+    "type": "openai",
     "api_url": "https://open.bigmodel.cn/api/paas/v4",
     "models": [
         "glm-5.2",

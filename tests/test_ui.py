@@ -513,6 +513,7 @@ def _setup_providers(tmp_path, monkeypatch, specs) -> None:
     for name, api_key, api_url, models, default in specs:
         data = {
             "name": name,
+            "type": "openai",
             "api_key": api_key,
             "api_url": api_url,
             "models": models.split(","),
@@ -596,6 +597,7 @@ def _setup_preset(
     api_url="https://api.deepseek.com",
     models="chat,reasoner",
     default="chat",
+    ptype="openai",
 ):
     import json
 
@@ -605,6 +607,7 @@ def _setup_preset(
         json.dumps(
             {
                 "name": name,
+                "type": ptype,
                 "api_url": api_url,
                 "models": models.split(","),
                 "default_model": default,

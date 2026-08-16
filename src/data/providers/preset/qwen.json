@@ -1,5 +1,6 @@
 {
     "name": "Qwen",
+    "type": "openai",
     "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "models": [
         "qwen3.8-max",
