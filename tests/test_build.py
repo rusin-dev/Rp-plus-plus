@@ -108,3 +108,103 @@ def test_build_main_dry_run():
     from scripts.build_exe import main
 
     assert main(["--dry-run"]) == 0
+
+
+# ---------- 修复 Issue #20：避免打包本机所有 pip 库 ----------
+
+
+def test_build_args_excludes_known_heavy_modules():
+    """torch / jupyter 等本机常见干扰库必须显式排除，否则会被 PyInstaller/Nuitka 一并打进产物。"""
+    from scripts.build_exe import EXCLUDED_MODULES, build_args
+
+    args = build_args()
+    if sys.platform == "win32":
+        flag = "--exclude-module"
+    else:
+        flag = "--nofollow-import-to"
+    excluded = [a for a in args if a.startswith(flag + "=")]
+    assert len(excluded) == len(EXCLUDED_MODULES)
+    for mod in EXCLUDED_MODULES:
+        assert f"{flag}={mod}" in excluded
+
+
+def test_venv_python_matches_platform_layout():
+    """构建用 venv 的 Python 路径必须符合平台布局（Windows: Scripts\\python.exe；其它: bin/python）。"""
+    from scripts.build_exe import _venv_python
+
+    path = Path(_venv_python())
+    if sys.platform == "win32":
+        assert path.parts[-2:] == ("Scripts", "python.exe")
+    else:
+        assert path.parts[-2:] == ("bin", "python")
+
+
+def test_ensure_clean_venv_uses_requirements_txt(monkeypatch, tmp_path):
+    """干净 venv 必须从 requirements.txt 安装依赖，而不是从系统 Python 复制。"""
+    from scripts import build_exe
+
+    monkeypatch.setattr(build_exe, "ROOT", tmp_path)
+    (tmp_path / "requirements.txt").write_text("dummy==0.0.0\n", encoding="utf-8")
+
+    installed_with = []
+
+    class _FakeEnvBuilder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def create(self, _path):
+            base = Path(_path) / ("Scripts" if sys.platform == "win32" else "bin")
+            base.mkdir(parents=True, exist_ok=True)
+            (base / ("python.exe" if sys.platform == "win32" else "python")).touch()
+            (Path(_path) / ".stamp").touch()
+
+    monkeypatch.setattr(build_exe.venv, "EnvBuilder", _FakeEnvBuilder)
+    monkeypatch.setattr(
+        build_exe.subprocess,
+        "check_call",
+        lambda cmd, *a, **kw: installed_with.append(cmd),
+    )
+
+    build_exe._ensure_clean_venv()
+
+    req_install = next(
+        (
+            c
+            for c in installed_with
+            if "-r" in c and str(tmp_path / "requirements.txt") in " ".join(map(str, c))
+        ),
+        None,
+    )
+    assert req_install is not None, "必须从 requirements.txt 安装依赖"
+
+
+def test_main_uses_venv_python_when_running_build(monkeypatch):
+    """实际执行打包时，必须用 venv 内的 Python 而不是当前解释器，避免本机 pip 库被打包。"""
+    from scripts import build_exe
+
+    captured = {}
+
+    monkeypatch.setattr(build_exe, "_ensure_clean_venv", lambda: None)
+
+    fake_venv_py = "/fake/venv/python"
+    monkeypatch.setattr(build_exe, "_venv_python", lambda: fake_venv_py)
+
+    def _fake_check_call(cmd, *args, **kwargs):
+        captured["cmd"] = cmd
+
+    monkeypatch.setattr(build_exe.subprocess, "check_call", _fake_check_call)
+
+    class _NoExe:
+        def is_file(self):
+            return False
+
+        def stat(self):
+            raise OSError("no exe")
+
+    monkeypatch.setattr(build_exe, "_binary_name", lambda: "rp")
+    # 跳过最终 exe 检查和 env 同步，直接观察 cmd
+    monkeypatch.setattr(build_exe, "_sync_env_to_dist", lambda: None)
+
+    build_exe.main([])
+
+    assert captured["cmd"][0] == fake_venv_py
