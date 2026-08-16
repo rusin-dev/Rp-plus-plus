@@ -1250,6 +1250,54 @@ def test_bottom_toolbar_shows_unconfigured_hint(monkeypatch):
     assert "未配置" in plain
 
 
+def test_bottom_toolbar_shows_todos_with_separator(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+
+    class _FakeClient:
+        def todo_items(self):
+            return [
+                {"id": 1, "content": "写测试", "status": "pending", "priority": "high"},
+                {"id": 2, "content": "实现功能", "status": "completed", "priority": "medium"},
+            ]
+
+    app._client = _FakeClient()  # type: ignore[assignment]
+    plain = to_plain_text(app._bottom_toolbar())
+    assert "写测试" in plain
+    assert "实现功能" in plain
+    assert "─" in plain
+
+
+def test_bottom_toolbar_hides_todos_when_empty(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+
+    class _FakeClient:
+        def todo_items(self):
+            return []
+
+    app._client = _FakeClient()  # type: ignore[assignment]
+    plain = to_plain_text(app._bottom_toolbar())
+    assert "─" not in plain
+
+
+def test_bottom_toolbar_todos_yield_to_picker(monkeypatch):
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    app, bus = _make_app(monkeypatch)
+
+    class _FakeClient:
+        def todo_items(self):
+            return [{"id": 1, "content": "写测试", "status": "pending", "priority": "high"}]
+
+    app._client = _FakeClient()  # type: ignore[assignment]
+    app._open_picker("可用供应商", [("deepseek", "deepseek")])
+    plain = to_plain_text(app._bottom_toolbar())
+    assert "写测试" not in plain
+
+
 def test_primary_interrupt_arms_then_exits(monkeypatch):
     app, bus = _make_app(monkeypatch)
     assert app._primary_interrupt() is False

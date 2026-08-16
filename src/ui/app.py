@@ -387,7 +387,7 @@ class ChatApp:
         ]
 
     def _bottom_toolbar(self) -> AnyFormattedText:
-        """底部状态栏（类 Claude Code）：选择器/命令显示内容 + 左侧模式提示 + 右侧模型。"""
+        """底部状态栏（类 Claude Code）：选择器/命令显示内容 + 待办清单 + 左侧模式提示 + 右侧模型。"""
         fragments: StyleAndTextTuples = []
         if self._picker_mode is not None:
             fragments.extend(self._picker_fragments())
@@ -405,6 +405,8 @@ class ChatApp:
                     fragments.append(("", "\n"))
                 fragments.append(("class:cmd-rule", "─" * width))
                 fragments.append(("", "\n"))
+            else:
+                fragments.extend(self._todo_fragments())
         if self._exit_armed:
             left = "Press Ctrl-C again to exit"
         else:
@@ -417,6 +419,26 @@ class ChatApp:
         fragments.append(("class:status-left", left))
         fragments.append(("", "    "))
         fragments.append(("class:status-right", right))
+        return fragments
+
+    def _todo_fragments(self) -> StyleAndTextTuples:
+        """底部待办清单：用横线分隔，与输入框区分开；无待办时为空。"""
+        fragments: StyleAndTextTuples = []
+        if self._client is None:
+            return fragments
+        items = self._client.todo_items()
+        if not items:
+            return fragments
+        width = self._console.width or 80
+        fragments.append(("class:cmd-rule", "─" * width))
+        fragments.append(("", "\n"))
+        for item in items:
+            marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}[
+                item["status"]
+            ]
+            line = f"  {item['id']}. {marker} {item['content']}"
+            fragments.append(("", line))
+            fragments.append(("", "\n"))
         return fragments
 
     def _picker_fragments(self) -> StyleAndTextTuples:

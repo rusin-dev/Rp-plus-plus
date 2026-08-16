@@ -436,6 +436,22 @@ def test_todo_tools_shared_across_filtered_registry(monkeypatch, tmp_path):
     assert "共享任务" in result
 
 
+def test_todo_items_returns_copy(monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "ROOT_DIR", tmp_path)
+    registry = ToolRegistry()
+    registry.execute(
+        "create_todo_list",
+        '{"todos": [{"content": "任务A", "status": "in_progress"}]}',
+        EventBus(),
+    )
+    items = registry.todo_items()
+    assert items == [{"id": 1, "content": "任务A", "status": "in_progress", "priority": "medium"}]
+    items.append({"id": 2, "content": "外部污染", "status": "pending", "priority": "low"})
+    assert registry.todo_items() == [
+        {"id": 1, "content": "任务A", "status": "in_progress", "priority": "medium"}
+    ]
+
+
 # ---------- 网络工具 ----------
 
 _SAMPLE_DDG_HTML = """

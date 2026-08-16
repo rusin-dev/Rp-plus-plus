@@ -207,6 +207,10 @@ class ChatClient:
         """返回本会话累计的 token 用量快照。"""
         return dict(self._usage)
 
+    def todo_items(self) -> list[dict]:
+        """返回当前待办清单快照（供 UI 底部工具栏渲染）。"""
+        return self._tools.todo_items()
+
     def _record_usage(self, usage: object) -> None:
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
         completion_tokens = getattr(usage, "completion_tokens", 0) or 0
