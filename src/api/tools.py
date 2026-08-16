@@ -57,6 +57,8 @@ def _ask(bus: EventBus, question: str) -> str:
 
 def _run_shell(bus: EventBus, command: str) -> str:
     """执行 shell 命令并返回输出（注意：存在任意命令执行风险）。"""
+    if command.split()[0] in Config.COMMAND_BLACKLIST:
+        return f"error: 命令被禁止执行: {command}"
     try:
         result = subprocess.run(
             command,

@@ -204,6 +204,9 @@ class Config:
     # 网页搜索后端（bing / ddg / auto）
     SEARCH_BACKEND = os.getenv("SEARCH_BACKEND", "bing")
 
+    # 命令黑名单
+    COMMAND_BLACKLIST = set(os.getenv("COMMAND_BLACKLIST", "rm;cp;mv").split(";"))
+
     # ---------- Provider ----------
 
     @classmethod
