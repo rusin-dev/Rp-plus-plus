@@ -374,9 +374,7 @@ def test_todos_update_status(monkeypatch, tmp_path):
         '{"todos": [{"content": "任务A"}, {"content": "任务B"}]}',
         EventBus(),
     )
-    result = registry.execute(
-        "todos_update", '{"todo_id": 2, "status": "completed"}', EventBus()
-    )
+    result = registry.execute("todos_update", '{"todo_id": 2, "status": "completed"}', EventBus())
     assert "已更新待办 #2" in result
     read = registry.execute("todos_read", "{}", EventBus())
     assert "任务B" in read
@@ -391,9 +389,7 @@ def test_todos_update_invalid_id(monkeypatch, tmp_path):
         '{"todos": [{"content": "任务A"}]}',
         EventBus(),
     )
-    result = registry.execute(
-        "todos_update", '{"todo_id": 99, "status": "completed"}', EventBus()
-    )
+    result = registry.execute("todos_update", '{"todo_id": 99, "status": "completed"}', EventBus())
     assert "error:" in result
 
 
@@ -405,9 +401,7 @@ def test_todos_update_invalid_status(monkeypatch, tmp_path):
         '{"todos": [{"content": "任务A"}]}',
         EventBus(),
     )
-    result = registry.execute(
-        "todos_update", '{"todo_id": 1, "status": "bogus"}', EventBus()
-    )
+    result = registry.execute("todos_update", '{"todo_id": 1, "status": "bogus"}', EventBus())
     assert "error:" in result
 
 

@@ -326,12 +326,8 @@ def _format_todos(items: list[dict]) -> str:
     """把待办条目列表格式化为可读文本。"""
     lines: list[str] = []
     for item in items:
-        marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}[
-            item["status"]
-        ]
-        lines.append(
-            f"{item['id']}. {marker} {item['content']}（{item['priority']}）"
-        )
+        marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}[item["status"]]
+        lines.append(f"{item['id']}. {marker} {item['content']}（{item['priority']}）")
     return "\n".join(lines)
 
 
@@ -797,8 +793,7 @@ TODOS_UPDATE_TOOL_SCHEMA: ChatCompletionFunctionToolParam = {
     "function": {
         "name": "todos_update",
         "description": (
-            "更新某个待办条目的状态为 pending/in_progress/completed，"
-            "用于标记任务推进与完成。"
+            "更新某个待办条目的状态为 pending/in_progress/completed，用于标记任务推进与完成。"
         ),
         "parameters": {
             "type": "object",
