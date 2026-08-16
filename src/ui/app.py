@@ -433,9 +433,7 @@ class ChatApp:
         fragments.append(("class:cmd-rule", "─" * width))
         fragments.append(("", "\n"))
         for item in items:
-            marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}[
-                item["status"]
-            ]
+            marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}[item["status"]]
             line = f"  {item['id']}. {marker} {item['content']}"
             fragments.append(("", line))
             fragments.append(("", "\n"))
