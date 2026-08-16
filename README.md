@@ -145,19 +145,43 @@ Each task delegated to a sub-agent (via the `delegate` tool) runs on its own bra
 
 Provider configuration is stored in JSON files rather than environment variables:
 
-- **Preset templates**: `src/data/providers/preset/<name>.json`, containing only `api_url` / `models` / `default_model` (no API key), distributed with the project.
+- **Preset templates**: `src/data/providers/preset/<name>.json`, containing only `type` / `api_url` / `models` / `default_model` (no API key), distributed with the project.
 - **Using a preset**: run `rp`, then enter `/connect`. The fixed bottom area shows the list of available providers; use `↑ ↓` to switch and `Enter` to confirm, then you are prompted to enter the API key. The program automatically generates `src/data/providers/<name>.json` (preset metadata + `api_key`) and switches to it.
 - **Current selection**: the provider/model selected via `/connect` and `/models` is persisted to `.rp/config.json` and restored automatically on next launch.
+
+`type` selects the transport backend:
+
+| `type` | Backend | Notes |
+| --- | --- | --- |
+| `openai` | OpenAI SDK → `chat.completions` | Default for OpenAI-compatible providers (DeepSeek, GLM, Kimi, Qwen, MiniMax, etc.) |
+| `responses` | OpenAI SDK → `responses` | OpenAI Responses API; `system` becomes `instructions`, tool results become `function_call_output` items |
+| `anthropic` | `anthropic` SDK → `messages.stream` | Anthropic Claude; `system` is a separate parameter, `max_tokens` is required (default 8192) |
+
+Missing or invalid `type` causes the provider file to be rejected (and `Config.validate()` reports it explicitly).
 
 Example of manually creating `src/data/providers/<name>.json`:
 
 ```json
 {
     "name": "deepseek",
+    "type": "openai",
     "api_url": "https://api.deepseek.com/v1",
     "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
     "default_model": "deepseek-v4-flash",
     "api_key": "sk-xxx"
+}
+```
+
+For Anthropic:
+
+```json
+{
+    "name": "anthropic",
+    "type": "anthropic",
+    "api_url": "https://api.anthropic.com",
+    "models": ["claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"],
+    "default_model": "claude-sonnet-4-5",
+    "api_key": "sk-ant-xxx"
 }
 ```
 
