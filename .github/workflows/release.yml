@@ -29,7 +29,7 @@ jobs:
     name: Build (${{ matrix.os }})
     needs: test
     if: ${{ !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') }}
-    timeout-minutes: 40
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
