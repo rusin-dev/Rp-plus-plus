@@ -4,8 +4,9 @@
 
 ## 分支与提交
 
-* `master` 是保护分支，请先创建 feature 分支，通过 Pull Request 合入。
+* `master` 是保护分支，请先创建 feature 分支，通过 Pull Request 合入 `dev` 分支。
 * 提交信息使用简洁的英文或中文，描述变更意图。
+* 创建 PR 前请先创建对应的 Issue ，并把具体修改和期望放在 Issue 而不是 PR 中。
 
 ## 代码规范
 
