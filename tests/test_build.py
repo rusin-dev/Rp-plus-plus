@@ -64,6 +64,7 @@ def test_build_args_for_nuitka():
     assert "src/data" in data_spec
     output_dir = next(a for a in args if a.startswith("--output-dir="))
     assert Path(output_dir.removeprefix("--output-dir=")).name == "dist"
+    assert not any(a.startswith("--no-debug") for a in args)
     assert args[-1].endswith("launcher.py")
 
 

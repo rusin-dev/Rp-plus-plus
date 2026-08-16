@@ -1,5 +1,6 @@
 {
     "name": "MiniMax Token Plan (minimax.com)",
+    "type": "openai",
     "api_url": "https://api.minimaxi.com/v1",
     "models": [
         "minimax-m3",

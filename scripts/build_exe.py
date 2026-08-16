@@ -55,7 +55,6 @@ def build_args() -> list[str]:
         f"--include-data-dir={data_dir}=src/data",
         f"--output-dir={ROOT / 'dist'}",
         "--static-libpython=no",
-        "--no-debug",
         "--lto=yes",
         str(LAUNCHER),
     ]

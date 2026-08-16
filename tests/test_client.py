@@ -6,7 +6,7 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 
-from src.api.client import ChatClient, stream_completion
+from src.api.client import ChatClient, make_client, stream_completion
 from src.api.tools import ToolRegistry
 from src.config import Config, Provider
 from src.core.event_bus import EventBus, EventTypes
@@ -44,6 +44,7 @@ def _use_provider(
 ):
     provider = _provider(name=name, api_key=api_key, api_url=api_url)
     monkeypatch.setattr(Config, "ACTIVE_PROVIDER", name)
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
     monkeypatch.setattr(Config, "providers", lambda: {name: provider})
     return provider
 
@@ -395,3 +396,331 @@ def test_run_breaks_loop_when_cancelled(monkeypatch):
     assert events[-1].type == EventTypes.ASSISTANT_DONE
     tokens = [e.data for e in events if e.type == EventTypes.TOKEN]
     assert "b" not in tokens
+
+
+# ---------- 传输分发（provider.type） ----------
+
+
+def _provider_with_type(
+    name: str,
+    ptype: str,
+    api_key: str = "test-key",
+    api_url: str = "https://api.example.com/v1",
+    models: list[str] | None = None,
+) -> Provider:
+    return Provider(
+        name=name,
+        api_key=api_key,
+        api_url=api_url,
+        models=list(models or ["m"]),
+        default_model=(models or ["m"])[0],
+        type=ptype,
+    )
+
+
+def _use_provider_with(monkeypatch, provider: Provider):
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", provider.name)
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
+    monkeypatch.setattr(Config, "providers", lambda: {provider.name: provider})
+
+
+def test_make_client_anthropic_returns_anthropic_instance(monkeypatch):
+    from anthropic import Anthropic
+
+    provider = _provider_with_type(
+        "ant", "anthropic", api_url="https://api.anthropic.com", models=["claude-x"]
+    )
+    _use_provider_with(monkeypatch, provider)
+    client = make_client(Config)
+    assert isinstance(client, Anthropic)
+
+
+def test_make_client_openai_default(monkeypatch):
+    from openai import OpenAI
+
+    _use_provider(monkeypatch)
+    client = make_client(Config)
+    assert isinstance(client, OpenAI)
+
+
+def test_ensure_client_recreates_on_type_change(monkeypatch):
+    provider_openai = _provider_with_type("o", "openai")
+    provider_anthropic = _provider_with_type(
+        "a", "anthropic", api_url="https://api.anthropic.com", models=["claude-x"]
+    )
+    _use_provider_with(monkeypatch, provider_openai)
+    client = ChatClient(Config, EventBus(), ToolRegistry())
+    first = client._client
+    _use_provider_with(monkeypatch, provider_anthropic)
+    second = client._ensure_client()
+    assert first is not second
+
+
+def test_stream_anthropic_emits_text_tokens(monkeypatch):
+    from anthropic import Anthropic
+
+    bus = EventBus()
+    provider = _provider_with_type(
+        "ant", "anthropic", api_url="https://api.anthropic.com", models=["claude-x"]
+    )
+    _use_provider_with(monkeypatch, provider)
+    anthropic_client = Anthropic(api_key="x")
+
+    msg_start = SimpleNamespace(
+        type="message_start",
+        message=SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=0)),
+    )
+    block_start = SimpleNamespace(
+        type="content_block_start",
+        index=0,
+        content_block=SimpleNamespace(type="text", text=""),
+    )
+    delta_1 = SimpleNamespace(
+        type="content_block_delta",
+        index=0,
+        delta=SimpleNamespace(type="text_delta", text="你"),
+    )
+    delta_2 = SimpleNamespace(
+        type="content_block_delta",
+        index=0,
+        delta=SimpleNamespace(type="text_delta", text="好"),
+    )
+    block_stop = SimpleNamespace(type="content_block_stop", index=0)
+    msg_delta = SimpleNamespace(type="message_delta", usage=SimpleNamespace(output_tokens=5))
+    msg_stop = SimpleNamespace(type="message_stop")
+
+    def stream():
+        yield msg_start
+        yield block_start
+        yield delta_1
+        yield delta_2
+        yield block_stop
+        yield msg_delta
+        yield msg_stop
+
+    captured = {}
+
+    def create(**kwargs):
+        captured["system"] = kwargs.get("system")
+        captured["model"] = kwargs.get("model")
+        captured["messages"] = kwargs.get("messages")
+        captured["max_tokens"] = kwargs.get("max_tokens")
+        return stream()
+
+    monkeypatch.setattr(anthropic_client.messages, "create", create)
+
+    messages = [
+        ChatCompletionSystemMessageParam(role="system", content="你是助手"),
+        ChatCompletionUserMessageParam(role="user", content="hi"),
+    ]
+    made, text = stream_completion(Config, bus, anthropic_client, ToolRegistry(), messages, "auto")
+
+    assert made is False
+    assert text == "你好"
+    assert captured["model"] == "claude-x"
+    assert captured["max_tokens"]  # 必须传 max_tokens
+    assert captured["system"] == "你是助手" or (
+        captured["system"] and "你是助手" in captured["system"]
+    )
+    tokens = [e.data for e in bus.drain() if e.type == EventTypes.TOKEN]
+    assert tokens == ["你", "好"]
+
+
+def test_stream_anthropic_tool_call(monkeypatch):
+    from anthropic import Anthropic
+
+    bus = EventBus()
+    provider = _provider_with_type(
+        "ant", "anthropic", api_url="https://api.anthropic.com", models=["claude-x"]
+    )
+    _use_provider_with(monkeypatch, provider)
+    anthropic_client = Anthropic(api_key="x")
+
+    tool_block_start = SimpleNamespace(
+        type="content_block_start",
+        index=0,
+        content_block=SimpleNamespace(type="tool_use", id="toolu_1", name="shell", input={}),
+    )
+    args_delta_1 = SimpleNamespace(
+        type="content_block_delta",
+        index=0,
+        delta=SimpleNamespace(type="input_json_delta", partial_json='{"command":'),
+    )
+    args_delta_2 = SimpleNamespace(
+        type="content_block_delta",
+        index=0,
+        delta=SimpleNamespace(type="input_json_delta", partial_json=' "echo hi"}'),
+    )
+    block_stop = SimpleNamespace(type="content_block_stop", index=0)
+    msg_stop = SimpleNamespace(type="message_stop")
+
+    def stream():
+        yield tool_block_start
+        yield args_delta_1
+        yield args_delta_2
+        yield block_stop
+        yield msg_stop
+
+    monkeypatch.setattr(anthropic_client.messages, "create", lambda **kw: stream())
+    monkeypatch.setattr(ToolRegistry, "execute", lambda self, name, args, bus: "echo hi output")
+
+    tools = ToolRegistry()
+    messages = [
+        ChatCompletionSystemMessageParam(role="system", content="s"),
+        ChatCompletionUserMessageParam(role="user", content="run echo hi"),
+    ]
+    made, _ = stream_completion(Config, bus, anthropic_client, tools, messages, "auto")
+    assert made is True
+    events = bus.drain()
+    tool_call = next(e for e in events if e.type == EventTypes.TOOL_CALL)
+    assert tool_call.data["name"] == "shell"
+    assert "echo hi" in tool_call.data["arguments"]
+    tool_result = next(e for e in events if e.type == EventTypes.TOOL_RESULT)
+    assert "echo hi output" in tool_result.data
+
+
+def test_stream_anthropic_records_usage(monkeypatch):
+    from anthropic import Anthropic
+
+    bus = EventBus()
+    provider = _provider_with_type(
+        "ant", "anthropic", api_url="https://api.anthropic.com", models=["claude-x"]
+    )
+    _use_provider_with(monkeypatch, provider)
+    anthropic_client = Anthropic(api_key="x")
+
+    msg_start = SimpleNamespace(
+        type="message_start",
+        message=SimpleNamespace(usage=SimpleNamespace(input_tokens=42, output_tokens=0)),
+    )
+    block_start = SimpleNamespace(
+        type="content_block_start",
+        index=0,
+        content_block=SimpleNamespace(type="text", text=""),
+    )
+    delta = SimpleNamespace(
+        type="content_block_delta",
+        index=0,
+        delta=SimpleNamespace(type="text_delta", text="hi"),
+    )
+    block_stop = SimpleNamespace(type="content_block_stop", index=0)
+    msg_delta = SimpleNamespace(type="message_delta", usage=SimpleNamespace(output_tokens=7))
+    msg_stop = SimpleNamespace(type="message_stop")
+
+    def stream():
+        yield msg_start
+        yield block_start
+        yield delta
+        yield block_stop
+        yield msg_delta
+        yield msg_stop
+
+    monkeypatch.setattr(anthropic_client.messages, "create", lambda **kw: stream())
+
+    client = ChatClient(Config, bus, ToolRegistry())
+    monkeypatch.setattr(client, "_ensure_client", lambda: anthropic_client)
+    client._run("hi", "sys", [])
+    usage = client.usage_summary()
+    assert usage["input_tokens"] == 42
+    assert usage["output_tokens"] == 7
+    assert usage["last_input_tokens"] == 42
+    assert usage["calls"] == 1
+
+
+def test_stream_responses_emits_text_tokens(monkeypatch):
+    from openai import OpenAI
+
+    bus = EventBus()
+    provider = _provider_with_type("resp", "responses", models=["gpt-x"])
+    _use_provider_with(monkeypatch, provider)
+    openai_client = OpenAI(api_key="x")
+
+    text_delta_1 = SimpleNamespace(type="response.output_text.delta", delta="你")
+    text_delta_2 = SimpleNamespace(type="response.output_text.delta", delta="好")
+    completed = SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            usage=SimpleNamespace(input_tokens=3, output_tokens=4, total_tokens=7)
+        ),
+    )
+
+    def stream():
+        yield text_delta_1
+        yield text_delta_2
+        yield completed
+
+    captured = {}
+
+    def create(**kwargs):
+        captured["instructions"] = kwargs.get("instructions")
+        captured["model"] = kwargs.get("model")
+        captured["stream"] = kwargs.get("stream")
+        return stream()
+
+    monkeypatch.setattr(openai_client.responses, "create", create)
+
+    messages = [
+        ChatCompletionSystemMessageParam(role="system", content="你是助手"),
+        ChatCompletionUserMessageParam(role="user", content="hi"),
+    ]
+    made, text = stream_completion(Config, bus, openai_client, ToolRegistry(), messages, "auto")
+    assert made is False
+    assert text == "你好"
+    assert captured["model"] == "gpt-x"
+    assert captured["stream"] is True
+    tokens = [e.data for e in bus.drain() if e.type == EventTypes.TOKEN]
+    assert tokens == ["你", "好"]
+
+
+def test_stream_responses_tool_call(monkeypatch):
+    from openai import OpenAI
+
+    bus = EventBus()
+    provider = _provider_with_type("resp", "responses", models=["gpt-x"])
+    _use_provider_with(monkeypatch, provider)
+    openai_client = OpenAI(api_key="x")
+
+    args_delta_1 = SimpleNamespace(
+        type="response.function_call_arguments.delta",
+        item_id="fc_1",
+        delta='{"command":',
+    )
+    args_delta_2 = SimpleNamespace(
+        type="response.function_call_arguments.delta",
+        item_id="fc_1",
+        delta=' "echo hi"}',
+    )
+    output_item_done = SimpleNamespace(
+        type="response.output_item.done",
+        item=SimpleNamespace(
+            type="function_call",
+            call_id="fc_1",
+            name="shell",
+            arguments='{"command": "echo hi"}',
+        ),
+    )
+    completed = SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            usage=SimpleNamespace(input_tokens=1, output_tokens=2, total_tokens=3)
+        ),
+    )
+
+    def stream():
+        yield args_delta_1
+        yield args_delta_2
+        yield output_item_done
+        yield completed
+
+    monkeypatch.setattr(openai_client.responses, "create", lambda **kw: stream())
+    monkeypatch.setattr(ToolRegistry, "execute", lambda self, name, args, bus: "ok")
+
+    tools = ToolRegistry()
+    messages = [ChatCompletionUserMessageParam(role="user", content="run")]
+    made, _ = stream_completion(Config, bus, openai_client, tools, messages, "auto")
+    assert made is True
+    events = bus.drain()
+    tool_call = next(e for e in events if e.type == EventTypes.TOOL_CALL)
+    assert tool_call.data["name"] == "shell"
+    assert "echo hi" in tool_call.data["arguments"]
+    assert next(e for e in events if e.type == EventTypes.TOOL_RESULT).data == "ok"

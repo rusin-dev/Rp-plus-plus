@@ -881,6 +881,10 @@ class ToolRegistry:
         new._todos = self._todos
         return new
 
+    def todo_items(self) -> list[dict]:
+        """返回当前待办清单的快照（副本，外部修改不影响内部状态）。"""
+        return [dict(item) for item in self._todos]
+
     def register(
         self, schema: ChatCompletionFunctionToolParam, handler: Callable[..., str]
     ) -> None:

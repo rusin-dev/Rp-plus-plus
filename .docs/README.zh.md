@@ -101,6 +101,20 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 
 对话自动保存到 `.rp/sessions/`（已加入 `.gitignore`），下次启动可用 `/session` 恢复上下文。
 
+### 底部状态栏与待办清单
+
+输入框下方有底部状态栏，右侧显示当前模式与模型。当模型通过 `create_todo_list` 创建待办清单后，清单也会显示在底部状态栏中，并用横线与输入框分隔：
+
+```
+────────────────────────────────────────────────────────────
+  1. [ ] 分析需求
+  2. [~] 设计接口
+  3. [x] 编写测试
+⏸ auto mode on · /help 查看快捷键    deepseek-v4-flash · deepseek
+```
+
+状态标记：`[ ]` 待办、`[~]` 进行中、`[x]` 已完成。待办清单以会话为作用域，并与子 Agent 共享；可用 `todos_update` 随任务推进更新条目状态。选择器（`/connect`、`/checkpoints`）与命令展示（`/help`、`/models` 等）打开时会优先占据底部区域，暂时隐藏待办清单。
+
 ### 自动 git 仓库与提交
 
 启动会话时，rp 会在工作区根目录（`ROOT_DIR`）自动初始化 git 仓库（若尚未初始化），并在每轮对话结束后自动创建一个提交，把每一轮的改动都留档。
@@ -129,19 +143,43 @@ rp 创建的每一个提交（初始基线、每轮提交、任务分支提交�
 
 供应商配置使用 JSON 文件存储，不再使用环境变量：
 
-- **预设模板**：`src/data/providers/preset/<名称>.json`，只含 `api_url` / `models` / `default_model`，不含 API Key，随项目分发。
+- **预设模板**：`src/data/providers/preset/<名称>.json`，只含 `type` / `api_url` / `models` / `default_model`，不含 API Key，随项目分发。
 - **使用预设**：运行 `rp` 后输入 `/connect`，底部固定区域会展示可用供应商列表，用 `↑ ↓` 切换、`Enter` 确认，随后提示输入 API Key，程序自动生成 `src/data/providers/<名称>.json`（预设元信息 + `api_key`）并切换。
 - **当前选中**：`/connect`、`/models` 切换的 provider/model 会持久化到 `.rp/config.json`，下次启动自动恢复。
+
+`type` 决定底层传输后端：
+
+| `type` | 后端 | 说明 |
+| --- | --- | --- |
+| `openai` | OpenAI SDK → `chat.completions` | OpenAI 兼容供应商的默认选项（DeepSeek、GLM、Kimi、Qwen、MiniMax 等） |
+| `responses` | OpenAI SDK → `responses` | OpenAI Responses API；`system` 转 `instructions`，工具结果转 `function_call_output` 项 |
+| `anthropic` | `anthropic` SDK → `messages.stream` | Anthropic Claude；`system` 是独立参数，`max_tokens` 必填（默认 8192） |
+
+`type` 缺失或非法时，该 provider 配置文件会被直接拒绝（`Config.validate()` 会给出明确提示）。
 
 手动创建 `src/data/providers/<名称>.json` 示例：
 
 ```json
 {
     "name": "deepseek",
+    "type": "openai",
     "api_url": "https://api.deepseek.com/v1",
     "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
     "default_model": "deepseek-v4-flash",
     "api_key": "sk-xxx"
+}
+```
+
+Anthropic 示例：
+
+```json
+{
+    "name": "anthropic",
+    "type": "anthropic",
+    "api_url": "https://api.anthropic.com",
+    "models": ["claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"],
+    "default_model": "claude-sonnet-4-5",
+    "api_key": "sk-ant-xxx"
 }
 ```
 
