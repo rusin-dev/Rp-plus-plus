@@ -3,6 +3,9 @@
 - Windows: PyInstaller
 - macOS / Linux: Nuitka
 
+为避免把本机 pip 全量库打进产物（参考 Issue #20），构建过程在临时干净 venv 中进行，
+仅安装 requirements.txt 与对应打包工具。
+
 用法：
     python scripts/build_exe.py            # 完整构建
     python scripts/build_exe.py --dry-run  # 仅打印命令，不执行
@@ -19,6 +22,7 @@ import argparse
 import os
 import subprocess
 import sys
+import venv
 from pathlib import Path
 
 if sys.platform == "win32":
@@ -26,6 +30,32 @@ if sys.platform == "win32":
 
 ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = ROOT / "scripts" / "launcher.py"
+BUILD_DIR = ROOT / "build"
+BUILD_VENV = BUILD_DIR / ".venv-build"
+
+# 防御性排除：常见重型/无关库。即便在干净 venv 中通常不会被静态分析触及，
+# 但加上显式排除更稳妥，也能让构建意图在命令行上可见。
+EXCLUDED_MODULES = (
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "tensorflow",
+    "tf_keras",
+    "keras",
+    "jax",
+    "flax",
+    "transformers",
+    "datasets",
+    "accelerate",
+    "scipy",
+    "pandas",
+    "sklearn",
+    "scikit-learn",
+    "matplotlib",
+    "IPython",
+    "jupyter",
+    "notebook",
+)
 
 
 def build_args() -> list[str]:
@@ -36,7 +66,7 @@ def build_args() -> list[str]:
 
     if sys.platform == "win32":
         sep = ";"
-        return [
+        args = [
             "--onefile",
             "--name=rp",
             f"--add-data={data_dir}{sep}src/data",
@@ -44,8 +74,11 @@ def build_args() -> list[str]:
             f"--paths={ROOT}",
             "--clean",
             "--noconfirm",
-            str(LAUNCHER),
         ]
+        for mod in EXCLUDED_MODULES:
+            args.append(f"--exclude-module={mod}")
+        args.append(str(LAUNCHER))
+        return args
 
     cmd = [
         "--onefile",
@@ -56,12 +89,22 @@ def build_args() -> list[str]:
         f"--output-dir={ROOT / 'dist'}",
         "--static-libpython=no",
         "--lto=yes",
-        str(LAUNCHER),
     ]
+    for mod in EXCLUDED_MODULES:
+        cmd.append(f"--nofollow-import-to={mod}")
+    cmd.append(str(LAUNCHER))
     return cmd
 
 
+def _venv_python() -> str:
+    """构建用 venv 内 Python 解释器的路径。"""
+    if sys.platform == "win32":
+        return str(BUILD_VENV / "Scripts" / "python.exe")
+    return str(BUILD_VENV / "bin" / "python")
+
+
 def _command() -> list[str]:
+    """构造完整打包命令（首项 Python 路径由 main() 在执行时替换为 venv 内的解释器）。"""
     if sys.platform == "win32":
         return [sys.executable, "-m", "PyInstaller", *build_args()]
     return [sys.executable, "-m", "nuitka", *build_args()]
@@ -83,19 +126,45 @@ def _build_env() -> dict[str, str]:
     return env
 
 
-def _ensure_builder() -> None:
-    """按平台安装对应打包工具。"""
-    if sys.platform == "win32":
-        try:
-            import PyInstaller  # noqa: F401
-        except ImportError:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+def _builder_package() -> str:
+    """当前平台对应的打包工具包名。"""
+    return "pyinstaller" if sys.platform == "win32" else "nuitka"
+
+
+def _ensure_clean_venv() -> None:
+    """创建/复用干净构建 venv，仅安装 requirements.txt + 打包工具。
+
+    解决 Issue #20：本机 pip 全量库（如 torch、jupyter 等）会被 PyInstaller/Nuitka
+    当作依赖一起打进产物，导致文件条目数超过 32 位无符号整数上限、产物极度臃肿。
+    使用独立 venv 后，打包工具只看见项目真实依赖。
+    """
+    BUILD_DIR.mkdir(exist_ok=True)
+    py = _venv_python()
+    req = ROOT / "requirements.txt"
+    builder_pkg = _builder_package()
+
+    # 复用：venv 存在、stamp 不早于 requirements.txt
+    marker = BUILD_VENV / ".stamp"
+    if Path(py).is_file() and marker.is_file() and marker.stat().st_mtime >= req.stat().st_mtime:
+        print(f"复用构建 venv: {BUILD_VENV}")
         return
 
-    try:
-        import nuitka  # noqa: F401
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "nuitka"])
+    print(f"创建构建用 venv: {BUILD_VENV}")
+    env_builder = venv.EnvBuilder(
+        system_site_packages=False,
+        clear=True,
+        with_pip=True,
+    )
+    env_builder.create(str(BUILD_VENV))
+
+    print("升级 pip 并安装运行时依赖（requirements.txt）...")
+    subprocess.check_call([py, "-m", "pip", "install", "--upgrade", "pip"])
+    subprocess.check_call([py, "-m", "pip", "install", "-r", str(req)])
+    print(f"安装打包工具: {builder_pkg}")
+    subprocess.check_call([py, "-m", "pip", "install", builder_pkg])
+
+    marker.touch()
+    print(f"构建 venv 就绪: {py}")
 
 
 def _binary_name() -> str:
@@ -127,10 +196,16 @@ def main(argv: list[str] | None = None) -> int:
 
     cmd = _command()
     if args.dry_run:
+        # dry-run 模式下若 venv 已存在，复用其 Python 路径让命令更真实
+        if Path(_venv_python()).is_file():
+            cmd[0] = _venv_python()
         print(" ".join(cmd))
         return 0
 
-    _ensure_builder()
+    _ensure_clean_venv()
+    # 用干净 venv 中的 Python 执行打包，避免本机 pip 库被打包
+    cmd[0] = _venv_python()
+
     subprocess.check_call(cmd, cwd=ROOT, env=_build_env())
     exe = ROOT / "dist" / _binary_name()
     if exe.is_file():
