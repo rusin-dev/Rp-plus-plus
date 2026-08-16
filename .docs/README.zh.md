@@ -91,7 +91,7 @@ Project Pilot 内置 5 个子 Agent，通过 `delegate` 工具自动委派领域
 | `/variants` | 查看/切换思考强度（`low` / `medium` / `high` / `max`，以 `reasoning_effort` 传入 API） |
 | `/models` | 列出当前供应商的可用模型；`/models <名称>` 切换 |
 | `/connect` | 列出已配置的供应商；`/connect <名称>` 切换 |
-| `/apikey` | 交互式配置当前供应商的 API Key（明文存储；`/apikey <key>` 直接设置，留空回车取消） |
+| `/apikey` | 交互式配置 API Key（明文存储；`/apikey <key>` 直接设置，留空回车取消）。首次配置（尚未配置任何供应商）时弹出供应商/预设选择器，同样可交互式输入初始 Key |
 | `/mode` | 查看/切换工作模式（`plan` / `build` / `auto`） |
 | `/compact` | 压缩对话上下文（保留最近 20 条，可用 `/compact <n>` 指定） |
 | `/usage` | 查看 token 用量与上下文窗口占用 |
