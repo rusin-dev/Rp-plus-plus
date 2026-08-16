@@ -492,6 +492,8 @@ class ChatApp:
             return False
         if self._picker_kind == "checkpoints":
             self._confirm_rollback(pending)
+        elif self._picker_kind == "apikey":
+            self._apikey_pick(pending)
         else:
             self._connect_pick(pending)
         return True
@@ -694,7 +696,10 @@ class ChatApp:
             self._awaiting_apikey_update = False
             api_key = api_key.strip()
             if not api_key:
-                self._console.print(f"已取消，{name} 的 API Key 保持不变", style=_DIM_STYLE)
+                if self._config.get_provider(name) is None:
+                    self._console.print(f"已取消，{name} 未配置", style=_DIM_STYLE)
+                else:
+                    self._console.print(f"已取消，{name} 的 API Key 保持不变", style=_DIM_STYLE)
                 return
             self._set_api_key(name, api_key)
             return
@@ -715,34 +720,74 @@ class ChatApp:
         self._save_session()
 
     def _apikey_command(self, arg: str | None) -> None:
-        """交互式配置当前供应商的 API Key（明文存储，无需加密）。
+        """交互式配置 API Key（明文存储，无需加密）。
 
-        - `/apikey`：提示输入新 Key；留空回车取消
-        - `/apikey <key>`：直接设置
+        - `/apikey`：已配置时提示输入当前供应商的新 Key；首次配置（无供应商）时弹出选择器（含预设）
+        - `/apikey <key>`：直接设置当前供应商的 Key
+        - `/apikey <名称>`：首次配置时把参数视为供应商/预设名称，随后提示输入 Key
         """
         provider = self._config.active_provider()
-        if provider is None:
-            self._console.print(
-                "未配置 API provider，请先 /connect 选择一个供应商", style=_ERROR_STYLE
-            )
+        if provider is not None:
+            if arg:
+                self._set_api_key(provider.name, arg)
+            else:
+                self._begin_apikey_input(provider.name)
             return
         if arg:
-            self._set_api_key(provider.name, arg)
+            if self._config.get_provider(arg) is None and self._config.get_preset(arg) is None:
+                self._console.print(
+                    f"✖ 未知的 provider 或预设：{arg}，可用：/apikey 选择", style=_ERROR_STYLE
+                )
+                return
+            self._begin_apikey_input(arg)
             return
-        self._awaiting_api_key = provider.name
+        self._show_apikey_picker()
+
+    def _show_apikey_picker(self) -> None:
+        """首次配置：展示可配置的供应商（含预设），终端下用底部交互选择器。"""
+        providers = self._config.providers()
+        presets = self._config.presets()
+        if not providers and not presets:
+            self._console.print(
+                "没有可用的 provider 预设，请在 src/data/providers/preset 中添加",
+                style=_ERROR_STYLE,
+            )
+            return
+        items: list[tuple[str, str]] = []
+        for name in sorted(providers) + sorted(presets):
+            if any(name == existing for existing, _ in items):
+                continue
+            items.append((name, name))
+        if not self._console.is_terminal:
+            lines = [("", f"  {label}") for _, label in items]
+            lines.append(("class:cmd-hint", "输入 /apikey <名称> 选择供应商"))
+            self._command_display = ("选择要配置的供应商", lines)
+            return
+        self._open_picker("选择要配置的供应商（↑↓ 选择 · Enter 确认）", items, kind="apikey")
+
+    def _apikey_pick(self, name: str) -> None:
+        """首次配置流程：选中供应商后进入 API Key 输入。"""
+        if self._config.get_provider(name) is None and self._config.get_preset(name) is None:
+            self._console.print(f"✖ 未知的 provider 或预设：{name}", style=_ERROR_STYLE)
+            return
+        self._begin_apikey_input(name)
+
+    def _begin_apikey_input(self, name: str) -> None:
+        self._awaiting_api_key = name
         self._awaiting_apikey_update = True
-        self._console.print(
-            f"请输入 {provider.name} 的新 API Key（直接回车取消）", style=_TOOL_STYLE
-        )
+        self._console.print(f"请输入 {name} 的 API Key（直接回车取消）", style=_TOOL_STYLE)
 
     def _set_api_key(self, name: str, api_key: str) -> None:
+        was_configured = self._config.get_provider(name) is not None
         try:
             provider = self._config.set_api_key(name, api_key)
         except ValueError as exc:
             self._console.print(f"✖ {exc}", style=_ERROR_STYLE)
             return
+        verb = "更新" if was_configured else "配置"
         self._console.print(
-            f"已更新 {provider.name} 的 API Key（明文保存至 {provider.config_file}）",
+            f"已{verb} {provider.name} 的 API Key（明文保存至 {provider.config_file}），"
+            f"当前模型：{self._config.active_model()}",
             style=_OK_STYLE,
         )
 

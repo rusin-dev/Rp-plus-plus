@@ -299,7 +299,8 @@ class Config:
     def set_api_key(cls, name: str, api_key: str) -> Provider:
         """为指定供应商设置 API Key（明文写入其 JSON 配置文件）。
 
-        已配置的供应商直接更新 Key；未配置但存在预设的供应商从预设生成配置文件。
+        已配置的供应商直接更新 Key；未配置但存在预设的供应商从预设生成配置文件，
+        并切换为该供应商（首次配置后立即可用）。
         """
         api_key = api_key.strip()
         if not api_key:
@@ -324,6 +325,9 @@ class Config:
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         updated = cls._provider_from_file(path)
         assert updated is not None
+        cls.ACTIVE_PROVIDER = updated.name
+        cls.ACTIVE_MODEL = updated.default_model
+        cls._save_runtime_state()
         return updated
 
     @classmethod

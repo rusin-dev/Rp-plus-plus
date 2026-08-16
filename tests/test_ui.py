@@ -621,13 +621,82 @@ def _setup_preset(
     monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
 
 
-def test_command_apikey_requires_provider(monkeypatch, tmp_path):
+def test_command_apikey_first_time_no_preset_errors(monkeypatch, tmp_path):
     _setup_preset(tmp_path, monkeypatch)
+    preset_dir = tmp_path / "preset"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "deepseek.json").unlink()
+    providers_dir = tmp_path / "providers"
+    providers_dir.mkdir(parents=True, exist_ok=True)
     app, bus = _make_app(monkeypatch)
     output = _run_command_capture(app, "/apikey")
-    assert "请先 /connect" in output
+    assert "没有可用的 provider 预设" in output
     assert app._awaiting_api_key is None
     assert app._awaiting_apikey_update is False
+
+
+def test_command_apikey_first_time_opens_picker(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/apikey")
+    assert app._picker_mode == "menu"
+    assert app._picker_kind == "apikey"
+    names = [name for name, _ in app._picker_items]
+    assert "deepseek" in names
+    assert app._command_display is None
+
+
+def test_command_apikey_first_time_confirm_creates_provider(monkeypatch, tmp_path):
+    import json
+
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _terminal_app(monkeypatch)
+    app._run_command("/apikey")
+    app._picker_confirm()
+    assert app._consume_picker_pending() is True
+    assert app._awaiting_api_key == "deepseek"
+    assert app._awaiting_apikey_update is True
+    app._finish_connect_api_key("deepseek", "sk-first")
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+    assert Config.ACTIVE_PROVIDER == "deepseek"
+    provider = Config.get_provider("deepseek")
+    assert provider is not None
+    assert provider.api_key == "sk-first"
+    saved = json.loads((tmp_path / "providers" / "deepseek.json").read_text(encoding="utf-8"))
+    assert saved["api_key"] == "sk-first"
+    state = json.loads((tmp_path / "state" / "config.json").read_text(encoding="utf-8"))
+    assert state["active_provider"] == "deepseek"
+
+
+def test_command_apikey_first_time_arg_prompts(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _make_app(monkeypatch)
+    output = _run_command_capture(app, "/apikey deepseek")
+    assert "请输入 deepseek 的 API Key" in output
+    assert app._awaiting_api_key == "deepseek"
+    assert app._awaiting_apikey_update is True
+
+
+def test_command_apikey_first_time_unknown_arg_errors(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _make_app(monkeypatch)
+    output = _run_command_capture(app, "/apikey nope")
+    assert "未知的 provider 或预设" in output
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+
+
+def test_command_apikey_first_time_blank_cancels(monkeypatch, tmp_path):
+    _setup_preset(tmp_path, monkeypatch)
+    app, bus = _make_app(monkeypatch)
+    app._run_command("/apikey deepseek")
+    assert app._awaiting_apikey_update is True
+    app._finish_connect_api_key("deepseek", "   ")
+    assert app._awaiting_api_key is None
+    assert app._awaiting_apikey_update is False
+    assert Config.ACTIVE_PROVIDER is None
+    assert Config.get_provider("deepseek") is None
 
 
 def test_command_apikey_direct_sets_key(monkeypatch, tmp_path):

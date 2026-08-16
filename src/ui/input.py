@@ -19,7 +19,7 @@ COMMAND_DESCRIPTIONS: dict[str, str] = {
     "variants": "查看/切换思考强度（low/medium/high/max）",
     "models": "查看/切换当前供应商的模型",
     "connect": "查看/切换 API 供应商",
-    "apikey": "交互式配置当前供应商的 API Key（明文存储）",
+    "apikey": "交互式配置 API Key（明文存储；首次配置时可选供应商）",
     "mode": "查看/切换工作模式（plan/build/auto）",
     "compact": "压缩对话上下文",
     "usage": "查看 token 用量与上下文窗口",

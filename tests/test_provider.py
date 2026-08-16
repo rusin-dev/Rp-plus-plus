@@ -138,6 +138,17 @@ def test_set_api_key_creates_from_preset(tmp_path, monkeypatch):
     assert saved["default_model"] == "m1"
 
 
+def test_set_api_key_activates_provider(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(Config, "ACTIVE_PROVIDER", None)
+    monkeypatch.setattr(Config, "ACTIVE_MODEL", None)
+    Config.set_api_key("openai", "sk-123")
+    assert Config.ACTIVE_PROVIDER == "openai"
+    assert Config.ACTIVE_MODEL == "m1"
+    state = json.loads((tmp_path / "state" / "config.json").read_text(encoding="utf-8"))
+    assert state == {"active_provider": "openai", "active_model": "m1"}
+
+
 def test_set_api_key_unknown_raises(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
     with pytest.raises(ValueError):
