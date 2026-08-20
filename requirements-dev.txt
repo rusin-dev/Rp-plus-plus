@@ -2,7 +2,7 @@
 
 # 质量检查
 ruff>=0.16.2
-pytest>=9.0
+pytest>=9.1.1
 
 # 构建
 nuitka>=4.1.3
