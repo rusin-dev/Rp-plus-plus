@@ -1,8 +1,8 @@
 -r requirements.txt
 
 # 质量检查
+pytest>=9.1.1
 ruff>=0.16.3
-pytest>=9.0
 
 # 构建
 nuitka>=4.1.3
