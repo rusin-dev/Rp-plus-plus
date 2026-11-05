@@ -1,7 +1,7 @@
 -r requirements.txt
 
 # 质量检查
-pytest>=9.1.1
+pytest>=9.2.0
 ruff>=0.16.3
 
 # 构建
